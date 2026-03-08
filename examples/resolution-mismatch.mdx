@@ -1,0 +1,627 @@
+---
+title: 'Resolution Mismatch Pattern'
+description: 'Handle plans and executions at different time or quantity granularities'
+icon: 'calendar-days'
+---
+
+When comparing plans with execution, they often have **different granularities**:
+
+- **Monthly plan** vs **daily execution**
+- **Quarterly budget** vs **weekly expenses**
+- **Annual targets** vs **monthly reports**
+
+This pattern shows how to bridge these resolution mismatches.
+
+## The Problem
+
+```
+Plan:       [====== January: 300 units ======]
+            
+Execution:  [Day 1: 50] [Day 2: 75] [Day 3: 40] ... [Day 30: 25]
+```
+
+You cannot directly compare a monthly plan with daily execution data. They're at different resolutions!
+
+## Core Concepts
+
+### Resolution Mapping
+
+A **mapping function** converts the higher-resolution plan into the lower-resolution data:
+
+```
+Monthly Plan (300) → Split → 30 daily plans (10 each)
+```
+
+Then compare daily plan with daily execution.
+
+### Mapping Strategies
+
+Different business contexts need different mappings:
+
+- **Evenly distributed** - Split uniformly (300 / 30 = 10 per day)
+- **Workday weighted** - Only working days (300 / 22 = ~14 per workday)
+- **Custom schedule** - Based on business rules (weekends = 0, weekdays = more)
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Setup
+
+```java
+import com.softwarearchetypes.planvsexecution.resolutionmismatch.*;
+import java.time.*;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.*;
+```
+
+### Define Monthly Plan
+
+```java
+YearMonth january2025 = YearMonth.of(2025, 1);
+
+MonthlyProductionPlan plan = new MonthlyProductionPlan(
+    january2025,
+    300  // Target: 300 units for the month
+);
+
+System.out.println("Plan: " + plan.targetQuantity() + " units in " + 
+    plan.month());
+```
+
+### Define Daily Execution
+
+```java
+List<DailyProductionExecution> execution = List.of(
+    new DailyProductionExecution(
+        LocalDate.of(2025, 1, 2),
+        270,  // Produced
+        12,   // Defects
+        0     // Rework
+    ),
+    new DailyProductionExecution(
+        LocalDate.of(2025, 1, 4),
+        18,
+        0,
+        0
+    ),
+    new DailyProductionExecution(
+        LocalDate.of(2025, 1, 7),
+        12,
+        0,
+        0
+    ),
+    new DailyProductionExecution(
+        LocalDate.of(2025, 1, 12),
+        18,
+        6,
+        0
+    )
+);
+
+DailyProductionExecutionHistory history = 
+    new DailyProductionExecutionHistory(execution);
+
+System.out.println("Execution: " + execution.size() + " production days");
+```
+
+<Note>
+  We have 1 monthly plan but 4 daily execution records. Different granularities!
+</Note>
+
+### Create Mapping Strategy: Split Evenly
+
+```java
+// Map monthly plan to daily plan: 300 / 30 = 10 per day
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> splitEvenly30Days =
+    plan -> {
+        int dailyTarget = plan.targetQuantity() / 30;
+        
+        return IntStream.range(1, 31)
+            .mapToObj(day -> new DailyProductionExecution(
+                LocalDate.of(
+                    plan.month().getYear(),
+                    plan.month().getMonth(),
+                    day
+                ),
+                dailyTarget,  // Target for this day
+                0,
+                0
+            ))
+            .toList();
+    };
+
+System.out.println("Mapping strategy: Evenly distributed over 30 days");
+System.out.println("  Daily target: " + (plan.targetQuantity() / 30) + 
+    " units");
+```
+
+### Define Tolerance
+
+```java
+ProductionTolerance tolerance = ProductionTolerance.builder()
+    .allowedDeviation(10)  // Allow ±10 units per day
+    .build();
+```
+
+### Compare with Tolerance
+
+```java
+boolean withinTolerance = tolerance.isWithinTolerance(
+    plan,
+    history,
+    splitEvenly30Days
+);
+
+if (withinTolerance) {
+    System.out.println("✓ Execution is within tolerance");
+} else {
+    System.out.println("✗ Execution exceeded tolerance");
+}
+```
+
+### Alternative Mapping: Workdays Only
+
+```java
+// More realistic: only 22 working days in January
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> splitWorkdays =
+    plan -> {
+        int dailyTarget = (int) Math.ceil(plan.targetQuantity() / 22.0);
+        
+        return IntStream.range(1, 23)  // 22 workdays
+            .mapToObj(day -> new DailyProductionExecution(
+                LocalDate.of(
+                    plan.month().getYear(),
+                    plan.month().getMonth(),
+                    day
+                ),
+                dailyTarget,
+                0,
+                0
+            ))
+            .toList();
+    };
+
+System.out.println("\nMapping strategy: Workdays only (22 days)");
+System.out.println("  Daily target: " + 
+    Math.ceil(plan.targetQuantity() / 22.0) + " units");
+
+boolean workdaysWithinTolerance = tolerance.isWithinTolerance(
+    plan,
+    history,
+    splitWorkdays
+);
+
+System.out.println("Workdays tolerance: " + 
+    (workdaysWithinTolerance ? "✓ Pass" : "✗ Fail"));
+```
+
+</Steps>
+
+## Why Mapping Strategy Matters
+
+Different strategies give different results for the **same data**:
+
+<CodeGroup>
+
+```java Different Results
+import com.softwarearchetypes.planvsexecution.resolutionmismatch.*;
+import java.time.*;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.IntStream;
+
+public class ResolutionMismatchExample {
+    private static final Function<MonthlyProductionPlan, List<DailyProductionExecution>> 
+        SPLIT_EVENLY_30_DAYS = plan -> {
+            int dailyTarget = plan.targetQuantity() / 30;
+            return IntStream.range(1, 31)
+                .mapToObj(day -> new DailyProductionExecution(
+                    LocalDate.of(plan.month().getYear(), plan.month().getMonth(), day),
+                    dailyTarget, 0, 0
+                ))
+                .toList();
+        };
+    
+    public static void main(String[] args) {
+        // Monthly plan: 300 units
+        MonthlyProductionPlan plan = new MonthlyProductionPlan(
+            YearMonth.of(2025, 1),
+            300
+        );
+        
+        // Daily execution: 4 days of production
+        DailyProductionExecutionHistory execution = 
+            new DailyProductionExecutionHistory(List.of(
+                new DailyProductionExecution(
+                    LocalDate.of(2025, 1, 2), 270, 12, 0
+                ),
+                new DailyProductionExecution(
+                    LocalDate.of(2025, 1, 4), 25, 0, 0
+                )
+            ));
+        
+        // Tolerance: ±20 units
+        ProductionTolerance tolerance = ProductionTolerance.builder()
+            .allowedDeviation(20)
+            .build();
+        
+        // Strategy 1: Split evenly over 30 days
+        // Daily target = 300 / 30 = 10 per day
+        boolean result30Days = tolerance.isWithinTolerance(
+            plan, execution, SPLIT_EVENLY_30_DAYS
+        );
+        
+        // Strategy 2: Split over 22 workdays
+        // Daily target = 300 / 22 = ~14 per day
+        Function<MonthlyProductionPlan, List<DailyProductionExecution>> splitWorkdays =
+            p -> {
+                int dailyTarget = (int) Math.ceil(p.targetQuantity() / 22.0);
+                return IntStream.range(1, 23)
+                    .mapToObj(day -> new DailyProductionExecution(
+                        LocalDate.of(p.month().getYear(), p.month().getMonth(), day),
+                        dailyTarget, 0, 0
+                    ))
+                    .toList();
+            };
+        
+        boolean resultWorkdays = tolerance.isWithinTolerance(
+            plan, execution, splitWorkdays
+        );
+        
+        System.out.println("=== Resolution Mismatch Results ===");
+        System.out.println("Monthly plan: " + plan.targetQuantity() + " units");
+        System.out.println("Execution: 2 production days (270 + 25 = 295 units)");
+        System.out.println();
+        System.out.println("Strategy 1 (30 days, target=10/day): " + 
+            (result30Days ? "✓ PASS" : "✗ FAIL"));
+        System.out.println("Strategy 2 (22 days, target=14/day): " + 
+            (resultWorkdays ? "✓ PASS" : "✗ FAIL"));
+        System.out.println();
+        System.out.println("Same data, different mapping = different results!");
+    }
+}
+```
+
+```output Expected Output
+=== Resolution Mismatch Results ===
+Monthly plan: 300 units
+Execution: 2 production days (270 + 25 = 295 units)
+
+Strategy 1 (30 days, target=10/day): ✓ PASS
+Strategy 2 (22 days, target=14/day): ✗ FAIL
+
+Same data, different mapping = different results!
+```
+
+</CodeGroup>
+
+## Advanced Mapping Strategies
+
+### Custom Business Calendar
+
+Account for holidays, shutdowns, maintenance:
+
+```java
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> customCalendar(
+    Set<LocalDate> holidays,
+    Set<LocalDate> maintenanceDays
+) {
+    return plan -> {
+        // Get all days in month
+        YearMonth month = plan.month();
+        List<LocalDate> allDays = month.atDay(1)
+            .datesUntil(month.atEndOfMonth().plusDays(1))
+            .toList();
+        
+        // Filter to working days
+        List<LocalDate> workingDays = allDays.stream()
+            .filter(day -> day.getDayOfWeek() != DayOfWeek.SATURDAY)
+            .filter(day -> day.getDayOfWeek() != DayOfWeek.SUNDAY)
+            .filter(day -> !holidays.contains(day))
+            .filter(day -> !maintenanceDays.contains(day))
+            .toList();
+        
+        int dailyTarget = plan.targetQuantity() / workingDays.size();
+        
+        return workingDays.stream()
+            .map(day -> new DailyProductionExecution(
+                day, dailyTarget, 0, 0
+            ))
+            .toList();
+    };
+}
+
+// Usage
+Set<LocalDate> newYearHolidays = Set.of(
+    LocalDate.of(2025, 1, 1),
+    LocalDate.of(2025, 1, 6)
+);
+
+Set<LocalDate> maintenance = Set.of(
+    LocalDate.of(2025, 1, 15)
+);
+
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> mapping =
+    customCalendar(newYearHolidays, maintenance);
+
+boolean result = tolerance.isWithinTolerance(plan, execution, mapping);
+```
+
+### Weighted Distribution
+
+Distribute based on historical patterns:
+
+```java
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> weightedDistribution(
+    Map<Integer, Double> dayWeights  // Day of week -> weight
+) {
+    return plan -> {
+        YearMonth month = plan.month();
+        
+        // Calculate total weight
+        double totalWeight = month.atDay(1)
+            .datesUntil(month.atEndOfMonth().plusDays(1))
+            .mapToDouble(day -> dayWeights.getOrDefault(
+                day.getDayOfWeek().getValue(), 1.0
+            ))
+            .sum();
+        
+        // Distribute based on weights
+        return month.atDay(1)
+            .datesUntil(month.atEndOfMonth().plusDays(1))
+            .map(day -> {
+                double weight = dayWeights.getOrDefault(
+                    day.getDayOfWeek().getValue(), 1.0
+                );
+                int target = (int) (plan.targetQuantity() * weight / totalWeight);
+                
+                return new DailyProductionExecution(day, target, 0, 0);
+            })
+            .toList();
+    };
+}
+
+// Usage: Monday-Thursday = 1.2x, Friday = 0.8x, Weekend = 0
+Map<Integer, Double> weights = Map.of(
+    1, 1.2,  // Monday
+    2, 1.2,  // Tuesday
+    3, 1.2,  // Wednesday
+    4, 1.2,  // Thursday
+    5, 0.8,  // Friday
+    6, 0.0,  // Saturday
+    7, 0.0   // Sunday
+);
+
+Function<MonthlyProductionPlan, List<DailyProductionExecution>> mapping =
+    weightedDistribution(weights);
+```
+
+## Reverse Mapping: Aggregate Execution
+
+Sometimes you need to aggregate execution **up** to plan resolution:
+
+```java
+// Aggregate daily execution to monthly total
+public MonthlyProductionPlan aggregateToMonthly(
+    DailyProductionExecutionHistory execution,
+    YearMonth month
+) {
+    int totalProduced = execution.days().stream()
+        .filter(day -> YearMonth.from(day.date()).equals(month))
+        .mapToInt(day -> 
+            day.produced() - day.defects() + day.rework()
+        )
+        .sum();
+    
+    return new MonthlyProductionPlan(month, totalProduced);
+}
+
+// Now compare at monthly level
+MonthlyProductionPlan aggregatedExecution = 
+    aggregateToMonthly(execution, YearMonth.of(2025, 1));
+
+System.out.println("Plan: " + plan.targetQuantity());
+System.out.println("Actual: " + aggregatedExecution.targetQuantity());
+System.out.println("Difference: " + 
+    (aggregatedExecution.targetQuantity() - plan.targetQuantity()));
+```
+
+## Complete Example
+
+<CodeGroup>
+
+```java Full Example
+import com.softwarearchetypes.planvsexecution.resolutionmismatch.*;
+import java.time.*;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.*;
+
+public class ProductionResolutionExample {
+    public static void main(String[] args) {
+        System.out.println("=== Production Analysis: Monthly Plan vs Daily Execution ===\n");
+        
+        // Monthly plan: 3000 units in January
+        MonthlyProductionPlan monthlyPlan = new MonthlyProductionPlan(
+            YearMonth.of(2025, 1),
+            3000
+        );
+        
+        System.out.println("Monthly Plan:");
+        System.out.println("  Period: " + monthlyPlan.month());
+        System.out.println("  Target: " + monthlyPlan.targetQuantity() + " units");
+        
+        // Daily execution: simulated week
+        List<DailyProductionExecution> week1 = List.of(
+            new DailyProductionExecution(LocalDate.of(2025, 1, 2), 145, 5, 2),
+            new DailyProductionExecution(LocalDate.of(2025, 1, 3), 138, 8, 1),
+            new DailyProductionExecution(LocalDate.of(2025, 1, 6), 142, 6, 3),
+            new DailyProductionExecution(LocalDate.of(2025, 1, 7), 150, 4, 0),
+            new DailyProductionExecution(LocalDate.of(2025, 1, 8), 135, 10, 2)
+        );
+        
+        DailyProductionExecutionHistory execution = 
+            new DailyProductionExecutionHistory(week1);
+        
+        System.out.println("\nDaily Execution (Week 1):");
+        week1.forEach(day -> {
+            int net = day.produced() - day.defects() + day.rework();
+            System.out.println("  " + day.date() + ": " + 
+                day.produced() + " produced, " + net + " net");
+        });
+        
+        // Test different mapping strategies
+        System.out.println("\n=== Mapping Strategies ===\n");
+        
+        // Strategy 1: 30 days
+        Function<MonthlyProductionPlan, List<DailyProductionExecution>> split30 =
+            plan -> IntStream.range(1, 31)
+                .mapToObj(day -> new DailyProductionExecution(
+                    LocalDate.of(plan.month().getYear(), plan.month().getMonth(), day),
+                    plan.targetQuantity() / 30, 0, 0
+                ))
+                .toList();
+        
+        System.out.println("Strategy 1: Split over 30 days");
+        System.out.println("  Daily target: " + (3000 / 30) + " units");
+        
+        ProductionTolerance tolerance1 = ProductionTolerance.builder()
+            .allowedDeviation(10)
+            .build();
+        
+        boolean result1 = tolerance1.isWithinTolerance(
+            monthlyPlan, execution, split30
+        );
+        
+        System.out.println("  Result: " + (result1 ? "✓ PASS" : "✗ FAIL"));
+        
+        // Strategy 2: 22 workdays
+        Function<MonthlyProductionPlan, List<DailyProductionExecution>> split22 =
+            plan -> IntStream.range(1, 23)
+                .mapToObj(day -> new DailyProductionExecution(
+                    LocalDate.of(plan.month().getYear(), plan.month().getMonth(), day),
+                    (int) Math.ceil(plan.targetQuantity() / 22.0), 0, 0
+                ))
+                .toList();
+        
+        System.out.println("\nStrategy 2: Split over 22 workdays");
+        System.out.println("  Daily target: " + Math.ceil(3000 / 22.0) + " units");
+        
+        ProductionTolerance tolerance2 = ProductionTolerance.builder()
+            .allowedDeviation(15)
+            .build();
+        
+        boolean result2 = tolerance2.isWithinTolerance(
+            monthlyPlan, execution, split22
+        );
+        
+        System.out.println("  Result: " + (result2 ? "✓ PASS" : "✗ FAIL"));
+        
+        // Summary
+        System.out.println("\n=== Summary ===");
+        System.out.println("Choosing the right mapping strategy is critical!");
+        System.out.println("Same data + different mapping = different results");
+    }
+}
+```
+
+</CodeGroup>
+
+## Common Patterns
+
+### Pattern: Detect Resolution Mismatch
+
+```java
+public boolean hasResolutionMismatch(
+    Plan plan,
+    ExecutionHistory execution
+) {
+    Duration planGranularity = plan.getGranularity();
+    Duration execGranularity = execution.getGranularity();
+    
+    return !planGranularity.equals(execGranularity);
+}
+```
+
+### Pattern: Choose Mapping Strategy
+
+```java
+public Function<MonthlyPlan, List<DailyExecution>> chooseMappingStrategy(
+    IndustryType industry
+) {
+    return switch (industry) {
+        case MANUFACTURING -> splitByWorkdays();
+        case RETAIL -> splitByShopHours();
+        case SERVICES -> splitEvenly();
+        case AGRICULTURE -> splitBySeasons();
+    };
+}
+```
+
+### Pattern: Validate Mapping
+
+```java
+public void validateMapping(
+    MonthlyProductionPlan monthlyPlan,
+    Function<MonthlyProductionPlan, List<DailyProductionExecution>> mapping
+) {
+    List<DailyProductionExecution> dailyPlans = mapping.apply(monthlyPlan);
+    
+    // Sum daily plans should equal monthly plan
+    int totalDaily = dailyPlans.stream()
+        .mapToInt(DailyProductionExecution::produced)
+        .sum();
+    
+    if (totalDaily != monthlyPlan.targetQuantity()) {
+        throw new IllegalStateException(
+            "Mapping validation failed: " +
+            "Daily sum (" + totalDaily + ") != " +
+            "Monthly target (" + monthlyPlan.targetQuantity() + ")"
+        );
+    }
+}
+```
+
+## Resolution Mismatch in Different Domains
+
+### Budget Planning
+
+```
+Quarterly Budget → Monthly → Weekly → Daily expenses
+```
+
+### Sales Targets
+
+```
+Annual Target → Quarterly → Monthly → Weekly → Daily sales
+```
+
+### Resource Allocation
+
+```
+Yearly Capacity → Quarterly → Monthly → Weekly → Daily schedules
+```
+
+## Key Takeaways
+
+<Note>
+
+1. **Always map to lower resolution** before comparing
+2. **Mapping strategy matters** - same data, different results
+3. **Document your mapping logic** - it's a business rule
+4. **Validate mappings** - ensure totals match
+5. **Consider reverse mapping** (aggregation) for reporting
+
+</Note>
+
+## Next Steps
+
+- See [Plan vs Execution](/examples/plan-vs-execution) for the full pattern
+- Read [Bad Implementation](/examples/bad-implementation) to avoid common mistakes
+- Learn about [Tolerance Strategies](/concepts/tolerance-strategies) for flexible matching
+
+<Warning>
+  Resolution mismatch is **not** a technical problem. It's a **business modeling** problem. The mapping strategy encodes business knowledge about how work is distributed over time.
+</Warning>

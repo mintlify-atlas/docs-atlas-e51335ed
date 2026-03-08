@@ -1,0 +1,338 @@
+---
+title: "Events"
+description: "Event publishing and handling infrastructure for domain events"
+---
+
+## Overview
+
+The events package provides a simple in-memory event publishing infrastructure for implementing event-driven architectures and domain events. It consists of:
+
+- `PublishedEvent` - Base interface for all events
+- `EventHandler` - Interface for handling events
+- `EventPublisher` - Interface for publishing events
+- `InMemoryEventsPublisher` - In-memory implementation of EventPublisher
+
+**Package:** `com.softwarearchetypes.common.events`
+
+## PublishedEvent
+
+`PublishedEvent` is the base interface that all domain events must implement.
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/events/PublishedEvent.java:6`
+
+### Methods
+
+#### id
+
+```java
+UUID id()
+```
+
+Returns the unique identifier of this event.
+
+<ResponseField name="return" type="UUID">
+  The unique event identifier
+</ResponseField>
+
+#### type
+
+```java
+String type()
+```
+
+Returns the type identifier of this event. Used for event discrimination and routing.
+
+<ResponseField name="return" type="String">
+  The event type identifier
+</ResponseField>
+
+#### occurredAt
+
+```java
+Instant occurredAt()
+```
+
+Returns the timestamp when this event occurred.
+
+<ResponseField name="return" type="Instant">
+  The event occurrence timestamp
+</ResponseField>
+
+### Implementation Example
+
+```java
+import com.softwarearchetypes.common.events.PublishedEvent;
+import java.time.Instant;
+import java.util.UUID;
+
+public record OrderPlacedEvent(
+    UUID id,
+    String type,
+    Instant occurredAt,
+    UUID orderId,
+    String customerId,
+    BigDecimal amount
+) implements PublishedEvent {
+    
+    public static OrderPlacedEvent create(UUID orderId, String customerId, BigDecimal amount) {
+        return new OrderPlacedEvent(
+            UUID.randomUUID(),
+            "order.placed",
+            Instant.now(),
+            orderId,
+            customerId,
+            amount
+        );
+    }
+}
+```
+
+## EventHandler
+
+`EventHandler` is responsible for handling specific types of events.
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/events/EventHandler.java:3`
+
+### Methods
+
+#### supports
+
+```java
+boolean supports(PublishedEvent event)
+```
+
+Checks if this handler supports the given event.
+
+<ParamField path="event" type="PublishedEvent" required>
+  The event to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if this handler can handle the event, `false` otherwise
+</ResponseField>
+
+#### handle
+
+```java
+void handle(PublishedEvent event)
+```
+
+Handles the given event.
+
+<ParamField path="event" type="PublishedEvent" required>
+  The event to handle
+</ParamField>
+
+### Implementation Example
+
+```java
+import com.softwarearchetypes.common.events.EventHandler;
+import com.softwarearchetypes.common.events.PublishedEvent;
+
+public class OrderEventHandler implements EventHandler {
+    
+    private final OrderService orderService;
+    
+    public OrderEventHandler(OrderService orderService) {
+        this.orderService = orderService;
+    }
+    
+    @Override
+    public boolean supports(PublishedEvent event) {
+        return event.type().startsWith("order.");
+    }
+    
+    @Override
+    public void handle(PublishedEvent event) {
+        switch (event.type()) {
+            case "order.placed" -> handleOrderPlaced((OrderPlacedEvent) event);
+            case "order.cancelled" -> handleOrderCancelled((OrderCancelledEvent) event);
+        }
+    }
+    
+    private void handleOrderPlaced(OrderPlacedEvent event) {
+        orderService.processOrder(event.orderId());
+    }
+    
+    private void handleOrderCancelled(OrderCancelledEvent event) {
+        orderService.cancelOrder(event.orderId());
+    }
+}
+```
+
+## EventPublisher
+
+`EventPublisher` is the interface for publishing events to registered handlers.
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/events/EventPublisher.java:5`
+
+### Methods
+
+#### publish (single event)
+
+```java
+void publish(PublishedEvent event)
+```
+
+Publishes a single event to all registered handlers that support it.
+
+<ParamField path="event" type="PublishedEvent" required>
+  The event to publish
+</ParamField>
+
+#### publish (multiple events)
+
+```java
+void publish(List<? extends PublishedEvent> events)
+```
+
+Publishes multiple events to all registered handlers that support them.
+
+<ParamField path="events" type="List<? extends PublishedEvent>" required>
+  The list of events to publish
+</ParamField>
+
+#### register
+
+```java
+void register(EventHandler eventHandler)
+```
+
+Registers an event handler to receive events.
+
+<ParamField path="eventHandler" type="EventHandler" required>
+  The handler to register
+</ParamField>
+
+## InMemoryEventsPublisher
+
+`InMemoryEventsPublisher` is a simple in-memory implementation of `EventPublisher` that synchronously dispatches events to registered handlers.
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/events/InMemoryEventsPublisher.java:7`
+
+### Constructor
+
+```java
+public InMemoryEventsPublisher()
+```
+
+Creates a new InMemoryEventsPublisher with no registered handlers.
+
+### Behavior
+
+- Events are dispatched synchronously in the calling thread
+- Each event is sent to all registered handlers that support it (via `EventHandler.supports()`)
+- When publishing a list of events, each event is published individually in order
+- Handlers are stored in a `HashSet`, so registration order is not guaranteed
+
+### Usage Example
+
+```java
+import com.softwarearchetypes.common.events.*;
+import java.util.List;
+
+public class Application {
+    
+    public static void main(String[] args) {
+        // Create publisher
+        EventPublisher publisher = new InMemoryEventsPublisher();
+        
+        // Register handlers
+        publisher.register(new OrderEventHandler(orderService));
+        publisher.register(new NotificationHandler(notificationService));
+        publisher.register(new AuditLogHandler(auditService));
+        
+        // Publish single event
+        OrderPlacedEvent event = OrderPlacedEvent.create(
+            UUID.randomUUID(),
+            "CUST-123",
+            new BigDecimal("99.99")
+        );
+        publisher.publish(event);
+        
+        // Publish multiple events
+        List<PublishedEvent> events = List.of(
+            OrderPlacedEvent.create(/* ... */),
+            OrderPlacedEvent.create(/* ... */),
+            OrderPlacedEvent.create(/* ... */)
+        );
+        publisher.publish(events);
+    }
+}
+```
+
+## Complete Example
+
+Here's a complete example showing how to use the event infrastructure:
+
+```java
+import com.softwarearchetypes.common.events.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+// 1. Define your event
+public record OrderPlacedEvent(
+    UUID id,
+    String type,
+    Instant occurredAt,
+    UUID orderId,
+    BigDecimal amount
+) implements PublishedEvent {
+    
+    public static OrderPlacedEvent create(UUID orderId, BigDecimal amount) {
+        return new OrderPlacedEvent(
+            UUID.randomUUID(),
+            "order.placed",
+            Instant.now(),
+            orderId,
+            amount
+        );
+    }
+}
+
+// 2. Create a handler
+public class EmailNotificationHandler implements EventHandler {
+    
+    @Override
+    public boolean supports(PublishedEvent event) {
+        return "order.placed".equals(event.type());
+    }
+    
+    @Override
+    public void handle(PublishedEvent event) {
+        OrderPlacedEvent orderEvent = (OrderPlacedEvent) event;
+        sendEmail(orderEvent.orderId(), orderEvent.amount());
+    }
+    
+    private void sendEmail(UUID orderId, BigDecimal amount) {
+        System.out.println("Sending email for order: " + orderId);
+    }
+}
+
+// 3. Wire everything together
+public class OrderService {
+    
+    private final EventPublisher eventPublisher;
+    
+    public OrderService() {
+        this.eventPublisher = new InMemoryEventsPublisher();
+        this.eventPublisher.register(new EmailNotificationHandler());
+    }
+    
+    public void placeOrder(UUID orderId, BigDecimal amount) {
+        // Business logic...
+        
+        // Publish event
+        OrderPlacedEvent event = OrderPlacedEvent.create(orderId, amount);
+        eventPublisher.publish(event);
+    }
+}
+```
+
+## Implementation Notes
+
+- Events are dispatched synchronously - handlers execute in the same thread as the publisher
+- If a handler throws an exception, it will propagate to the caller and subsequent handlers won't be called
+- For asynchronous event handling, consider wrapping the publisher or implementing a custom `EventPublisher`
+- The `InMemoryEventsPublisher` uses a `HashSet` for observers, so duplicate handler registrations are automatically prevented

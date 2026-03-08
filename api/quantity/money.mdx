@@ -1,0 +1,636 @@
+---
+title: Money
+description: A value object representing monetary amounts with currency
+---
+
+## Overview
+
+`Money` is a class that wraps JavaMoney (`org.javamoney.moneta.Money`) to provide a type-safe, immutable representation of monetary amounts with currency. It supports multiple currencies and provides convenient factory methods for common operations.
+
+**Package:** `com.softwarearchetypes.quantity.money`
+
+**Supported Currencies:** PLN, EUR, USD, GBP, and any ISO currency code
+
+## Factory Methods
+
+### Generic Factories
+
+#### of(Number, String)
+
+Creates Money from a numeric amount and currency code.
+
+<ParamField path="amount" type="Number" required>
+  The amount as a Number (int, double, BigDecimal, etc.)
+</ParamField>
+
+<ParamField path="currencyCode" type="String" required>
+  ISO 4217 currency code (e.g., "PLN", "EUR", "USD")
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance
+</ResponseField>
+
+```java
+Money money = Money.of(100, "PLN");
+Money euro = Money.of(50.5, "EUR");
+```
+
+#### of(BigDecimal, String)
+
+Creates Money from a BigDecimal amount and currency code.
+
+<ParamField path="amount" type="BigDecimal" required>
+  The amount as a BigDecimal
+</ParamField>
+
+<ParamField path="currencyCode" type="String" required>
+  ISO 4217 currency code
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance
+</ResponseField>
+
+```java
+BigDecimal amount = new BigDecimal("99.99");
+Money money = Money.of(amount, "USD");
+```
+
+### PLN (Polish Złoty) Factories
+
+```java
+// From int
+Money pln1 = Money.pln(100);              // 100 PLN
+
+// From BigDecimal
+Money pln2 = Money.pln(new BigDecimal("99.99"));
+
+// From Number
+Money pln3 = Money.pln(50.5);             // 50.5 PLN
+
+// From String
+Money pln4 = Money.pln("123.45");         // 123.45 PLN
+
+// Zero PLN
+Money zero = Money.zeroPln();             // 0 PLN
+
+// One PLN
+Money one = Money.onePln();               // 1 PLN
+```
+
+### EUR (Euro) Factories
+
+```java
+Money eur1 = Money.eur(100);              // 100 EUR
+Money eur2 = Money.eur(new BigDecimal("99.99"));
+Money eur3 = Money.eur(50.5);             // 50.5 EUR
+Money eur4 = Money.eur("123.45");         // 123.45 EUR
+Money zero = Money.zeroEur();             // 0 EUR
+```
+
+### USD (US Dollar) Factories
+
+```java
+Money usd1 = Money.usd(100);              // 100 USD
+Money usd2 = Money.usd(new BigDecimal("99.99"));
+Money usd3 = Money.usd(50.5);             // 50.5 USD
+Money usd4 = Money.usd("123.45");         // 123.45 USD
+Money zero = Money.zeroUsd();             // 0 USD
+```
+
+### GBP (British Pound) Factories
+
+```java
+Money gbp1 = Money.gbp(100);              // 100 GBP
+Money gbp2 = Money.gbp(new BigDecimal("99.99"));
+Money gbp3 = Money.gbp(50.5);             // 50.5 GBP
+Money gbp4 = Money.gbp("123.45");         // 123.45 GBP
+Money zero = Money.zeroGbp();             // 0 GBP
+```
+
+### Zero Money
+
+```java
+Money zeroPln = Money.zero("PLN");        // 0 PLN
+Money zeroEur = Money.zero("EUR");        // 0 EUR
+Money zeroUsd = Money.zero("USD");        // 0 USD
+```
+
+## Arithmetic Operations
+
+### add(Money)
+
+Adds another Money amount. Both amounts must have the same currency.
+
+<ParamField path="toAdd" type="Money" required>
+  The Money to add (must have same currency)
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the sum
+</ResponseField>
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(50);
+Money result = first.add(second);
+// Result: 150 PLN
+```
+
+### subtract(Money)
+
+Subtracts another Money amount. Both amounts must have the same currency.
+
+<ParamField path="toSubtract" type="Money" required>
+  The Money to subtract (must have same currency)
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the difference
+</ResponseField>
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(30);
+Money result = first.subtract(second);
+// Result: 70 PLN
+```
+
+### multiply(BigDecimal)
+
+Multiplies the Money by a BigDecimal multiplier.
+
+<ParamField path="multiplier" type="BigDecimal" required>
+  The multiplier
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the product
+</ResponseField>
+
+```java
+Money money = Money.pln(100);
+Money result = money.multiply(new BigDecimal("2.5"));
+// Result: 250 PLN
+```
+
+### multiply(Number)
+
+Multiplies the Money by a Number.
+
+<ParamField path="multiplier" type="Number" required>
+  The multiplier (int, double, etc.)
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the product
+</ResponseField>
+
+```java
+Money money = Money.pln(100);
+Money result = money.multiply(3);
+// Result: 300 PLN
+```
+
+### multiply(Percentage)
+
+Multiplies the Money by a Percentage.
+
+<ParamField path="percentage" type="Percentage" required>
+  The percentage to multiply by
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance representing the percentage of the original amount
+</ResponseField>
+
+```java
+Money money = Money.pln(1000);
+Percentage percentage = Percentage.of(20);  // 20%
+Money result = money.multiply(percentage);
+// Result: 200 PLN (20% of 1000)
+
+Money half = Money.pln(200).multiply(Percentage.of(50));
+// Result: 100 PLN (50% of 200)
+```
+
+### divide(BigDecimal)
+
+Divides the Money by a BigDecimal divisor.
+
+<ParamField path="divisor" type="BigDecimal" required>
+  The divisor
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the quotient
+</ResponseField>
+
+```java
+Money money = Money.pln(100);
+Money result = money.divide(new BigDecimal("4"));
+// Result: 25 PLN
+```
+
+### divide(BigDecimal, RoundingMode)
+
+Divides the Money by a BigDecimal divisor with specified rounding.
+
+<ParamField path="divisor" type="BigDecimal" required>
+  The divisor
+</ParamField>
+
+<ParamField path="roundingMode" type="RoundingMode" required>
+  The rounding mode (e.g., HALF_UP, DOWN, UP)
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  A new Money instance with the quotient, rounded to 2 decimal places
+</ResponseField>
+
+```java
+import java.math.RoundingMode;
+
+Money money = Money.pln(100);
+Money roundUp = money.divide(new BigDecimal("3"), RoundingMode.UP);
+// Result: 33.34 PLN
+
+Money roundDown = money.divide(new BigDecimal("3"), RoundingMode.DOWN);
+// Result: 33.33 PLN
+```
+
+### divideAndRemainder(BigDecimal)
+
+Divides the Money and returns both quotient and remainder.
+
+<ParamField path="divider" type="BigDecimal" required>
+  The divisor
+</ParamField>
+
+<ResponseField name="return" type="Money[]">
+  Array with [quotient, remainder]
+</ResponseField>
+
+```java
+Money money = Money.pln(100);
+Money[] result = money.divideAndRemainder(new BigDecimal("3"));
+// result[0]: 33 PLN (quotient)
+// result[1]: 1 PLN (remainder)
+```
+
+### negate()
+
+Returns the negation of this Money.
+
+<ResponseField name="return" type="Money">
+  A new Money instance with negated amount
+</ResponseField>
+
+```java
+Money money = Money.pln(50);
+Money result = money.negate();
+// Result: -50 PLN
+```
+
+### abs()
+
+Returns the absolute value of this Money.
+
+<ResponseField name="return" type="Money">
+  A new Money instance with absolute value
+</ResponseField>
+
+```java
+Money negativeMoney = Money.pln(-100);
+Money result = negativeMoney.abs();
+// Result: 100 PLN
+```
+
+## Static Utility Methods
+
+### min(Money, Money)
+
+Returns the smaller of two Money amounts.
+
+<ParamField path="one" type="Money" required>
+  First Money amount
+</ParamField>
+
+<ParamField path="two" type="Money" required>
+  Second Money amount
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  The smaller amount
+</ResponseField>
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(50);
+Money min = Money.min(first, second);
+// Result: 50 PLN
+```
+
+### min with Set
+
+Returns the minimum Money from a set.
+
+<ParamField path="values" type="Set<Money>" required>
+  Set of Money amounts
+</ParamField>
+
+<ResponseField name="return" type="Optional<Money>">
+  Optional containing the minimum, or empty if set is empty
+</ResponseField>
+
+```java
+Set<Money> amounts = Set.of(
+    Money.pln(100),
+    Money.pln(25),
+    Money.pln(50)
+);
+Optional<Money> min = Money.min(amounts);
+// Result: Optional[25 PLN]
+```
+
+### max(Money, Money)
+
+Returns the larger of two Money amounts.
+
+<ParamField path="one" type="Money" required>
+  First Money amount
+</ParamField>
+
+<ParamField path="two" type="Money" required>
+  Second Money amount
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  The larger amount
+</ResponseField>
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(50);
+Money max = Money.max(first, second);
+// Result: 100 PLN
+```
+
+### abs(Money)
+
+Static method to get absolute value.
+
+<ParamField path="from" type="Money" required>
+  The Money amount
+</ParamField>
+
+<ResponseField name="return" type="Money">
+  The absolute value
+</ResponseField>
+
+```java
+Money negativeMoney = Money.pln(-75);
+Money result = Money.abs(negativeMoney);
+// Result: 75 PLN
+```
+
+## Comparison Operations
+
+### isZero()
+
+Checks if the amount is zero.
+
+<ResponseField name="return" type="boolean">
+  true if amount is zero
+</ResponseField>
+
+```java
+Money zero = Money.zeroPln();
+boolean isZero = zero.isZero();  // true
+
+Money nonZero = Money.pln(1);
+boolean isZero2 = nonZero.isZero();  // false
+```
+
+### isNegative()
+
+Checks if the amount is negative.
+
+<ResponseField name="return" type="boolean">
+  true if amount is negative
+</ResponseField>
+
+```java
+Money negative = Money.pln(-10);
+boolean isNeg = negative.isNegative();  // true
+
+Money positive = Money.pln(10);
+boolean isNeg2 = positive.isNegative();  // false
+```
+
+### isGreaterThan(Money)
+
+Checks if this amount is greater than another.
+
+<ParamField path="other" type="Money" required>
+  The Money to compare to
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  true if this is greater than other
+</ResponseField>
+
+```java
+Money greater = Money.pln(100);
+Money lesser = Money.pln(50);
+boolean result = greater.isGreaterThan(lesser);  // true
+```
+
+### isGreaterThanOrEqualTo(Money)
+
+Checks if this amount is greater than or equal to another.
+
+<ParamField path="other" type="Money" required>
+  The Money to compare to
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  true if this is greater than or equal to other
+</ResponseField>
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(100);
+boolean result = first.isGreaterThanOrEqualTo(second);  // true
+```
+
+### compareTo(Money)
+
+Compares this Money to another. Implements `Comparable<Money>`.
+
+<ParamField path="other" type="Money" required>
+  The Money to compare to
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Negative if less, 0 if equal, positive if greater
+</ResponseField>
+
+```java
+Money smaller = Money.pln(50);
+Money larger = Money.pln(100);
+
+smaller.compareTo(larger);  // < 0
+larger.compareTo(smaller);  // > 0
+smaller.compareTo(Money.pln(50));  // = 0
+```
+
+## Value Extraction
+
+### value()
+
+Returns the numeric value as BigDecimal.
+
+<ResponseField name="return" type="BigDecimal">
+  The amount as BigDecimal, rounded to 10 decimal places with trailing zeros stripped
+</ResponseField>
+
+```java
+Money money = Money.pln(new BigDecimal("123.45"));
+BigDecimal value = money.value();
+// Result: 123.45
+```
+
+### currency()
+
+Returns the currency code.
+
+<ResponseField name="return" type="String">
+  ISO 4217 currency code
+</ResponseField>
+
+```java
+Money pln = Money.pln(100);
+String currency = pln.currency();  // "PLN"
+
+Money eur = Money.eur(200);
+String currency2 = eur.currency();  // "EUR"
+```
+
+### currencyUnit()
+
+Returns the CurrencyUnit object.
+
+<ResponseField name="return" type="CurrencyUnit">
+  The JavaMoney CurrencyUnit
+</ResponseField>
+
+```java
+Money money = Money.usd(100);
+CurrencyUnit unit = money.currencyUnit();
+```
+
+### toString()
+
+Returns a string representation.
+
+<ResponseField name="return" type="String">
+  Format: "CURRENCY amount"
+</ResponseField>
+
+```java
+Money money = Money.pln(new BigDecimal("123.45"));
+String str = money.toString();
+// Result: "PLN 123.45"
+```
+
+## Equality and Hashing
+
+```java
+Money first = Money.pln(100);
+Money second = Money.pln(100);
+Money different = Money.pln(50);
+
+first.equals(second);     // true
+first.equals(different);  // false
+
+first.hashCode() == second.hashCode();  // true
+```
+
+## Currency Preservation
+
+All arithmetic operations preserve the currency:
+
+```java
+Money eur = Money.eur(100);
+Money result = eur.divide(new BigDecimal("2"))
+                  .multiply(new BigDecimal("3"))
+                  .divide(new BigDecimal("5"));
+
+result.currency();  // "EUR" (preserved throughout the chain)
+```
+
+## Working with Percentages
+
+```java
+// Calculate 20% of 1000 PLN
+Money price = Money.pln(1000);
+Percentage discount = Percentage.of(20);  // 20%
+Money discountAmount = price.multiply(discount);
+// Result: 200 PLN
+
+Money finalPrice = price.subtract(discountAmount);
+// Result: 800 PLN
+
+// Or calculate directly
+Money tax = Money.pln(100).multiply(Percentage.of(23));  // 23% VAT
+// Result: 23 PLN
+```
+
+## Common Use Cases
+
+### Price Calculations
+
+```java
+Money basePrice = Money.pln(100);
+Money tax = basePrice.multiply(Percentage.of(23));  // 23% VAT
+Money totalPrice = basePrice.add(tax);
+// Result: 123 PLN
+```
+
+### Discount Calculations
+
+```java
+Money originalPrice = Money.pln(500);
+Percentage discountRate = Percentage.of(15);  // 15% off
+Money discountAmount = originalPrice.multiply(discountRate);
+Money finalPrice = originalPrice.subtract(discountAmount);
+// Result: 425 PLN
+```
+
+### Splitting Costs
+
+```java
+Money totalCost = Money.pln(100);
+Money[] split = totalCost.divideAndRemainder(new BigDecimal("3"));
+// split[0]: 33 PLN per person
+// split[1]: 1 PLN remainder
+```
+
+### Budget Calculations
+
+```java
+Money budget = Money.pln(10000);
+Money spent = Money.pln(7500);
+Money remaining = budget.subtract(spent);
+// Result: 2500 PLN
+
+boolean overBudget = spent.isGreaterThan(budget);  // false
+```
+
+## Related Types
+
+- [Quantity](/api/quantity/quantity) - General quantities with units
+- [Unit](/api/quantity/unit) - Units of measurement
+- Percentage - Percentage values for calculations

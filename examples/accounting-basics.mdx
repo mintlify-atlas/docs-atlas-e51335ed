@@ -1,0 +1,405 @@
+---
+title: 'Accounting Basics'
+description: 'Learn the fundamentals of double-entry bookkeeping with the Accounting module'
+---
+
+The Accounting module implements double-entry bookkeeping with bi-temporal support. This tutorial covers creating accounts, recording transactions, and working with balances.
+
+## Prerequisites
+
+This tutorial assumes you have the Accounting module included in your project:
+
+```xml
+<dependency>
+    <groupId>com.softwarearchetypes</groupId>
+    <artifactId>accounting</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+## Core Concepts
+
+### Accounts
+
+Accounts are classified by type:
+- **ASSET** - Resources owned (cash, receivables)
+- **LIABILITY** - Obligations owed (payables, loans)
+- **REVENUE** - Income earned
+- **EXPENSE** - Costs incurred
+- **OFF_BALANCE** - Memo accounts not part of the balance sheet
+
+### Transactions
+
+Transactions follow double-entry principles:
+- Every transaction has **credits** (increases) and **debits** (decreases)
+- Credits and debits must balance (sum to zero) for on-balance accounts
+- Transactions have two timestamps:
+  - `occurredAt` - when the event happened in reality
+  - `appliesAt` - when it affects the books (bi-temporal accounting)
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Configure the Accounting System
+
+First, create an `AccountingConfiguration` with a clock for bi-temporal support:
+
+```java
+import com.softwarearchetypes.accounting.*;
+import java.time.*;
+
+Instant now = LocalDateTime.of(2024, 3, 15, 10, 0)
+    .atZone(ZoneId.systemDefault())
+    .toInstant();
+
+Clock clock = Clock.fixed(now, ZoneId.systemDefault());
+AccountingConfiguration config = AccountingConfiguration.inMemory(clock);
+AccountingFacade facade = config.facade();
+```
+
+<Note>
+  The clock represents "now" for your accounting system. In production, use `Clock.systemDefaultZone()`.
+</Note>
+
+### Create Accounts
+
+Create different account types for your business:
+
+```java
+import static com.softwarearchetypes.accounting.CreateAccount.*;
+
+// Create asset accounts
+AccountId cashAccount = AccountId.generate();
+facade.createAccount(generateAssetAccount(cashAccount, "Cash"));
+
+AccountId receivablesAccount = AccountId.generate();
+facade.createAccount(generateAssetAccount(receivablesAccount, "Accounts Receivable"));
+
+// Create liability account
+AccountId payablesAccount = AccountId.generate();
+facade.createAccount(
+    new CreateAccount(payablesAccount, "Accounts Payable", "LIABILITY")
+);
+
+// Create revenue account
+AccountId salesAccount = AccountId.generate();
+facade.createAccount(
+    new CreateAccount(salesAccount, "Sales Revenue", "REVENUE")
+);
+```
+
+### Create Multiple Accounts with Initial Balances
+
+You can create multiple accounts at once with opening balances:
+
+```java
+import com.softwarearchetypes.quantity.money.Money;
+import java.util.*;
+
+AccountId cash = AccountId.generate();
+AccountId equity = AccountId.generate();
+
+Set<CreateAccount> accounts = Set.of(
+    generateAssetAccount(cash, "Cash"),
+    new CreateAccount(equity, "Owner Equity", "LIABILITY")
+);
+
+AccountAmounts initialBalances = AccountAmounts.of(Map.of(
+    cash, Money.pln(10000),      // Debit: increases asset
+    equity, Money.pln(-10000)    // Credit: increases liability
+));
+
+Result<String, Set<AccountId>> result = 
+    facade.createAccountsWithInitialBalances(accounts, initialBalances);
+
+if (result.success()) {
+    System.out.println("Accounts created with balances");
+}
+```
+
+<Warning>
+  Initial balances must follow double-entry rules: total debits = total credits.
+</Warning>
+
+### Record a Simple Transaction
+
+Let's record a sale: customer pays 1000 PLN cash.
+
+```java
+TransactionBuilderFactory txFactory = config.transactionBuilderFactory();
+
+Instant transactionTime = now.minusSeconds(3600); // 1 hour ago
+Instant applyTime = now; // applies now
+
+Transaction saleTx = txFactory.transaction()
+    .occurredAt(transactionTime)
+    .appliesAt(applyTime)
+    .withTypeOf("cash_sale")
+    .executing()
+    .debitFrom(cashAccount, Money.pln(1000))      // Cash increases
+    .creditTo(salesAccount, Money.pln(1000))      // Revenue increases
+    .build();
+
+Result<String, TransactionId> result = facade.execute(saleTx);
+
+if (result.success()) {
+    System.out.println("Transaction recorded: " + result.getSuccess());
+}
+```
+
+### Record a Multi-Leg Transaction
+
+Transactions can involve more than two accounts:
+
+```java
+AccountId commissionExpense = AccountId.generate();
+facade.createAccount(
+    new CreateAccount(commissionExpense, "Commission Expense", "EXPENSE")
+);
+
+// Customer payment: 1000 PLN cash, 50 PLN commission, 950 PLN to revenue
+Transaction complexSale = txFactory.transaction()
+    .occurredAt(now)
+    .appliesAt(now)
+    .withTypeOf("cash_sale_with_commission")
+    .executing()
+    .debitFrom(cashAccount, Money.pln(1000))
+    .debitFrom(commissionExpense, Money.pln(50))
+    .creditTo(salesAccount, Money.pln(1050))
+    .build();
+
+facade.execute(complexSale);
+```
+
+### Check Account Balances
+
+Query current and historical balances:
+
+```java
+// Current balance
+Optional<Money> currentBalance = facade.balance(cashAccount);
+currentBalance.ifPresent(balance -> 
+    System.out.println("Current cash balance: " + balance)
+);
+
+// Balance at a specific point in time (bi-temporal)
+Instant pastTime = now.minusSeconds(7200);
+Optional<Money> historicalBalance = facade.balanceAsOf(cashAccount, pastTime);
+historicalBalance.ifPresent(balance -> 
+    System.out.println("Cash balance 2 hours ago: " + balance)
+);
+
+// Query multiple account balances at once
+Balances balances = facade.balances(Set.of(cashAccount, receivablesAccount));
+```
+
+### Reverse a Transaction
+
+To correct errors or cancel transactions, create a reversal:
+
+```java
+// Original transaction
+Transaction originalTx = txFactory.transaction()
+    .occurredAt(now.minusSeconds(1800))
+    .appliesAt(now.minusSeconds(1800))
+    .withTypeOf("invoice")
+    .executing()
+    .debitFrom(receivablesAccount, Money.pln(500))
+    .creditTo(salesAccount, Money.pln(500))
+    .build();
+
+facade.execute(originalTx);
+
+// Create reversal (flips debits and credits)
+Transaction reversalTx = txFactory.transaction()
+    .occurredAt(now)
+    .appliesAt(now)
+    .reverting(originalTx)
+    .build();
+
+facade.execute(reversalTx);
+
+System.out.println("Transaction reversed");
+```
+
+### Query Transaction History
+
+Retrieve transaction details:
+
+```java
+// Find a specific transaction
+Optional<TransactionView> txView = facade.findTransactionBy(saleTx.id());
+txView.ifPresent(tx -> {
+    System.out.println("Transaction type: " + tx.type());
+    System.out.println("Occurred at: " + tx.occurredAt());
+    System.out.println("Applied at: " + tx.appliesAt());
+    System.out.println("Entries: " + tx.entries().size());
+});
+
+// Find all transactions for an account
+List<TransactionId> accountTransactions = 
+    facade.findTransactionIdsFor(cashAccount);
+
+System.out.println("Cash account has " + 
+    accountTransactions.size() + " transactions");
+```
+
+</Steps>
+
+## Working with Off-Balance Accounts
+
+Off-balance accounts are useful for tracking information that doesn't appear on the balance sheet:
+
+```java
+// Create off-balance accounts for customer credit tracking
+AccountId customerCreditLimit = AccountId.generate();
+AccountId customerCreditUsed = AccountId.generate();
+
+facade.createAccount(
+    generateOffBalanceAccount(customerCreditLimit, "Customer Credit Limit")
+);
+facade.createAccount(
+    generateOffBalanceAccount(customerCreditUsed, "Customer Credit Used")
+);
+
+// Record credit usage (off-balance accounts don't need to balance)
+Transaction creditUsage = txFactory.transaction()
+    .occurredAt(now)
+    .appliesAt(now)
+    .withTypeOf("credit_usage")
+    .executing()
+    .debitFrom(cashAccount, Money.pln(200))
+    .creditTo(receivablesAccount, Money.pln(200))
+    .creditTo(customerCreditUsed, Money.pln(200))  // Off-balance tracking
+    .build();
+
+facade.execute(creditUsage);
+```
+
+## Bi-Temporal Accounting Example
+
+The power of bi-temporal accounting is separating when something happened from when you record it:
+
+```java
+// Scenario: You discover on March 15 that a sale actually happened on March 10
+Instant actualEventTime = LocalDateTime.of(2024, 3, 10, 14, 0)
+    .atZone(ZoneId.systemDefault()).toInstant();
+    
+Instant recordingTime = LocalDateTime.of(2024, 3, 15, 10, 0)
+    .atZone(ZoneId.systemDefault()).toInstant();
+
+Transaction backdatedSale = txFactory.transaction()
+    .occurredAt(actualEventTime)      // When it actually happened
+    .appliesAt(recordingTime)          // When it affects the books
+    .withTypeOf("backdated_sale")
+    .executing()
+    .debitFrom(cashAccount, Money.pln(750))
+    .creditTo(salesAccount, Money.pln(750))
+    .build();
+
+facade.execute(backdatedSale);
+
+// Query: "What did I think my balance was on March 12?"
+Instant march12 = LocalDateTime.of(2024, 3, 12, 12, 0)
+    .atZone(ZoneId.systemDefault()).toInstant();
+    
+Money balanceOnMarch12 = facade.balanceAsOf(cashAccount, march12).orElse(Money.zeroPln());
+System.out.println("Balance as of March 12: " + balanceOnMarch12);
+// This will include the backdated transaction since appliesAt is March 15
+```
+
+## Complete Example
+
+<CodeGroup>
+
+```java Accounting Example
+import com.softwarearchetypes.accounting.*;
+import com.softwarearchetypes.common.Result;
+import com.softwarearchetypes.quantity.money.Money;
+import java.time.*;
+import java.util.*;
+
+public class AccountingExample {
+    public static void main(String[] args) {
+        // Setup
+        Clock clock = Clock.systemDefaultZone();
+        AccountingConfiguration config = AccountingConfiguration.inMemory(clock);
+        AccountingFacade facade = config.facade();
+        TransactionBuilderFactory txFactory = config.transactionBuilderFactory();
+        
+        Instant now = clock.instant();
+        
+        // Create chart of accounts
+        AccountId cash = AccountId.generate();
+        AccountId receivables = AccountId.generate();
+        AccountId sales = AccountId.generate();
+        
+        facade.createAccount(CreateAccount.generateAssetAccount(cash, "Cash"));
+        facade.createAccount(CreateAccount.generateAssetAccount(receivables, "A/R"));
+        facade.createAccount(new CreateAccount(sales, "Sales", "REVENUE"));
+        
+        // Record cash sale
+        Transaction cashSale = txFactory.transaction()
+            .occurredAt(now)
+            .appliesAt(now)
+            .withTypeOf("cash_sale")
+            .executing()
+            .debitFrom(cash, Money.pln(1500))
+            .creditTo(sales, Money.pln(1500))
+            .build();
+        
+        Result<String, TransactionId> result = facade.execute(cashSale);
+        
+        if (result.success()) {
+            System.out.println("✓ Cash sale recorded");
+            System.out.println("  Transaction ID: " + result.getSuccess());
+            
+            // Check balance
+            Money balance = facade.balance(cash).orElse(Money.zeroPln());
+            System.out.println("  Cash balance: " + balance);
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [Entry Allocations](/examples/accounting-advanced) for tracking partial payments
+- Explore [Transaction Validity](/concepts/bi-temporal) for time-limited entries
+- See [E-commerce Scenarios](/examples/ecommerce-accounting) for real-world patterns
+
+## Common Patterns
+
+### Pattern: Opening Balances
+
+```java
+AccountAmounts openingBalances = AccountAmounts.of(Map.of(
+    assets, Money.pln(50000),
+    equity, Money.pln(-50000)
+));
+
+facade.createAccountsWithInitialBalances(accounts, openingBalances);
+```
+
+### Pattern: Transfer Between Accounts
+
+```java
+facade.transfer(
+    fromAccount,
+    toAccount,
+    Money.pln(1000),
+    occurredAt,
+    appliesAt
+);
+```
+
+### Pattern: Find Account by Name
+
+```java
+Optional<AccountView> account = facade.findAll().stream()
+    .filter(acc -> acc.name().equals("Cash"))
+    .findFirst();
+```

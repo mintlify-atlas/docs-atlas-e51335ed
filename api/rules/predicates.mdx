@@ -1,0 +1,553 @@
+---
+title: Logical Predicates
+description: Composable predicate system with logical operators for rule building
+---
+
+## Overview
+
+The predicates module provides a framework for building complex logical conditions using composable predicates. It extends Java's standard `Predicate<T>` interface with logical operators and rich composition capabilities.
+
+## Core Interfaces
+
+### LogicalPredicate Generic Type
+
+Marker interface extending `Predicate` for reflection and type safety.
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public interface LogicalPredicate<T> extends Predicate<T> {
+    // Inherits: boolean test(T t)
+}
+```
+
+**Purpose:**
+- Marker for predicates that can be composed with logical operators
+- Enables reflection-based rule engines to identify composable predicates
+- Maintains type safety in complex predicate hierarchies
+
+### BinaryLogicalPredicate
+
+Abstract base class for predicates that combine two predicates with a logical operator.
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public abstract class BinaryLogicalPredicate<T> implements LogicalPredicate<T> {
+    private final LogicalPredicate<T> left;
+    private final LogicalPredicate<T> right;
+    
+    protected BinaryLogicalPredicate(LogicalPredicate<T> left,
+                                    LogicalPredicate<T> right);
+    
+    public LogicalPredicate<T> left();
+    public LogicalPredicate<T> right();
+}
+```
+
+<ParamField path="left" type="LogicalPredicate<T>" required>
+  Left operand predicate
+</ParamField>
+
+<ParamField path="right" type="LogicalPredicate<T>" required>
+  Right operand predicate
+</ParamField>
+
+## Logical Operators
+
+### AndPredicate
+
+Combines two predicates with logical AND.
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public final class AndPredicate<T> extends BinaryLogicalPredicate<T> {
+    public AndPredicate(LogicalPredicate<T> left, LogicalPredicate<T> right);
+    
+    @Override
+    public boolean test(T t) {
+        return left().test(t) && right().test(t);
+    }
+}
+```
+
+**Behavior:**
+- Returns `true` only if **both** left and right predicates return `true`
+- Short-circuits: if left is `false`, right is not evaluated
+- Truth table:
+  - `true` AND `true` = `true`
+  - `true` AND `false` = `false`
+  - `false` AND `true` = `false`
+  - `false` AND `false` = `false`
+
+**Example:**
+```java
+LogicalPredicate<Customer> isVIP = customer -> customer.totalSpent() > 10000;
+LogicalPredicate<Customer> isActive = customer -> customer.lastOrderDays() < 30;
+
+LogicalPredicate<Customer> vipAndActive = new AndPredicate<>(isVIP, isActive);
+
+boolean qualifies = vipAndActive.test(customer);
+// true only if customer is both VIP and active
+```
+
+### OrPredicate
+
+Combines two predicates with logical OR.
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public final class OrPredicate<T> extends BinaryLogicalPredicate<T> {
+    public OrPredicate(LogicalPredicate<T> left, LogicalPredicate<T> right);
+    
+    @Override
+    public boolean test(T t) {
+        return left().test(t) || right().test(t);
+    }
+}
+```
+
+**Behavior:**
+- Returns `true` if **either** left or right predicate returns `true`
+- Short-circuits: if left is `true`, right is not evaluated
+- Truth table:
+  - `true` OR `true` = `true`
+  - `true` OR `false` = `true`
+  - `false` OR `true` = `true`
+  - `false` OR `false` = `false`
+
+**Example:**
+```java
+LogicalPredicate<Order> isExpressShipping = order -> order.shippingType() == EXPRESS;
+LogicalPredicate<Order> isHighValue = order -> order.total().greaterThan(Money.of(500));
+
+LogicalPredicate<Order> priorityOrder = new OrPredicate<>(isExpressShipping, isHighValue);
+
+boolean needsPriority = priorityOrder.test(order);
+// true if either express shipping OR high value
+```
+
+### NotPredicate
+
+Negates a predicate (logical NOT).
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public final class NotPredicate<T> implements LogicalPredicate<T> {
+    private final LogicalPredicate<T> predicate;
+    
+    public NotPredicate(LogicalPredicate<T> predicate);
+    
+    @Override
+    public boolean test(T t) {
+        return !predicate.test(t);
+    }
+    
+    public LogicalPredicate<T> predicate();
+}
+```
+
+**Behavior:**
+- Returns `true` if the wrapped predicate returns `false`
+- Returns `false` if the wrapped predicate returns `true`
+- Truth table:
+  - NOT `true` = `false`
+  - NOT `false` = `true`
+
+**Example:**
+```java
+LogicalPredicate<Product> isDiscontinued = product -> product.status() == DISCONTINUED;
+
+LogicalPredicate<Product> isAvailable = new NotPredicate<>(isDiscontinued);
+
+boolean canOrder = isAvailable.test(product);
+// true if product is NOT discontinued
+```
+
+## Rich Composition
+
+### RichLogicalPredicate
+
+Enhanced predicate interface with fluent composition methods.
+
+```java
+package com.softwarearchetypes.rules.predicates;
+
+public interface RichLogicalPredicate<T> extends LogicalPredicate<T> {
+    
+    default RichLogicalPredicate<T> and(RichLogicalPredicate<T> other) {
+        return new RichAndPredicate<>(this, other);
+    }
+    
+    default RichLogicalPredicate<T> or(RichLogicalPredicate<T> other) {
+        return new RichOrPredicate<>(this, other);
+    }
+    
+    default RichLogicalPredicate<T> not() {
+        return new RichNotPredicate<>(this);
+    }
+}
+```
+
+Provides fluent API for building complex predicate trees.
+
+## Usage Examples
+
+### Basic Logical Operators
+
+```java
+// Simple predicates
+LogicalPredicate<Integer> isPositive = n -> n > 0;
+LogicalPredicate<Integer> isEven = n -> n % 2 == 0;
+
+// AND: positive AND even
+LogicalPredicate<Integer> isPositiveEven = new AndPredicate<>(isPositive, isEven);
+assertTrue(isPositiveEven.test(4));   // true
+assertFalse(isPositiveEven.test(3));  // false (not even)
+assertFalse(isPositiveEven.test(-2)); // false (not positive)
+
+// OR: positive OR even
+LogicalPredicate<Integer> isPositiveOrEven = new OrPredicate<>(isPositive, isEven);
+assertTrue(isPositiveOrEven.test(4));   // true (both)
+assertTrue(isPositiveOrEven.test(3));   // true (positive)
+assertTrue(isPositiveOrEven.test(-2));  // true (even)
+assertFalse(isPositiveOrEven.test(-3)); // false (neither)
+
+// NOT: not even (i.e., odd)
+LogicalPredicate<Integer> isOdd = new NotPredicate<>(isEven);
+assertTrue(isOdd.test(3));  // true
+assertFalse(isOdd.test(4)); // false
+```
+
+### Customer Eligibility Rules
+
+```java
+public class CustomerEligibilityRules {
+    
+    // Base predicates
+    private static LogicalPredicate<Customer> isVIP = 
+        customer -> customer.tierLevel() >= 3;
+    
+    private static LogicalPredicate<Customer> hasRecentActivity = 
+        customer -> customer.daysSinceLastOrder() < 90;
+    
+    private static LogicalPredicate<Customer> hasHighLifetimeValue = 
+        customer -> customer.lifetimeValue().greaterThan(Money.of(5000));
+    
+    private static LogicalPredicate<Customer> hasNoOutstandingIssues = 
+        customer -> customer.openIssues() == 0;
+    
+    // Complex rules
+    public static LogicalPredicate<Customer> qualifiesForPremiumSupport() {
+        return new AndPredicate<>(
+            isVIP,
+            new OrPredicate<>(
+                hasRecentActivity,
+                hasHighLifetimeValue
+            )
+        );
+    }
+    
+    public static LogicalPredicate<Customer> qualifiesForLoyaltyBonus() {
+        return new AndPredicate<>(
+            new AndPredicate<>(hasHighLifetimeValue, hasRecentActivity),
+            hasNoOutstandingIssues
+        );
+    }
+    
+    public static LogicalPredicate<Customer> needsReengagement() {
+        return new AndPredicate<>(
+            hasHighLifetimeValue,
+            new NotPredicate<>(hasRecentActivity)
+        );
+    }
+}
+
+// Usage
+Customer customer = getCustomer();
+
+if (qualifiesForPremiumSupport().test(customer)) {
+    assignPremiumSupportAgent(customer);
+}
+
+if (needsReengagement().test(customer)) {
+    sendReengagementOffer(customer);
+}
+```
+
+### Product Filtering
+
+```java
+public class ProductFilter {
+    
+    public List<Product> findProducts(List<Product> products, 
+                                     LogicalPredicate<Product> criteria) {
+        return products.stream()
+            .filter(criteria)
+            .collect(Collectors.toList());
+    }
+    
+    public static void main(String[] args) {
+        List<Product> catalog = loadCatalog();
+        
+        // Predicates
+        LogicalPredicate<Product> inStock = p -> p.inventory() > 0;
+        LogicalPredicate<Product> isOnSale = p -> p.salePrice() != null;
+        LogicalPredicate<Product> isExpensive = p -> 
+            p.price().greaterThan(Money.of(100));
+        LogicalPredicate<Product> isElectronics = p -> 
+            p.category() == Category.ELECTRONICS;
+        
+        // Complex filter: (in stock AND on sale) OR (electronics AND expensive)
+        LogicalPredicate<Product> featured = new OrPredicate<>(
+            new AndPredicate<>(inStock, isOnSale),
+            new AndPredicate<>(isElectronics, isExpensive)
+        );
+        
+        ProductFilter filter = new ProductFilter();
+        List<Product> featuredProducts = filter.findProducts(catalog, featured);
+    }
+}
+```
+
+### Order Validation Rules
+
+```java
+public class OrderValidationRules {
+    
+    // Base rules
+    private static LogicalPredicate<Order> hasValidPayment = 
+        order -> order.paymentMethod() != null && order.paymentMethod().isValid();
+    
+    private static LogicalPredicate<Order> hasValidAddress = 
+        order -> order.shippingAddress() != null && 
+                order.shippingAddress().isComplete();
+    
+    private static LogicalPredicate<Order> isNotEmpty = 
+        order -> order.lineItems().size() > 0;
+    
+    private static LogicalPredicate<Order> isBelowMaxAmount = 
+        order -> order.total().lessThan(Money.of(10000));
+    
+    private static LogicalPredicate<Order> requiresApproval = 
+        order -> order.total().greaterThan(Money.of(5000));
+    
+    // Validation rule
+    public static LogicalPredicate<Order> canCheckout() {
+        return new AndPredicate<>(
+            new AndPredicate<>(
+                new AndPredicate<>(hasValidPayment, hasValidAddress),
+                isNotEmpty
+            ),
+            isBelowMaxAmount
+        );
+    }
+    
+    // Auto-approval rule
+    public static LogicalPredicate<Order> canAutoApprove() {
+        return new AndPredicate<>(
+            canCheckout(),
+            new NotPredicate<>(requiresApproval)
+        );
+    }
+}
+
+// Usage
+public void processOrder(Order order) {
+    if (!canCheckout().test(order)) {
+        throw new ValidationException("Order cannot be checked out");
+    }
+    
+    if (canAutoApprove().test(order)) {
+        order.approve();
+    } else {
+        order.sendForManualApproval();
+    }
+}
+```
+
+### Fluent Composition with RichLogicalPredicate
+
+```java
+public class FluentPredicateExample {
+    
+    // Convert lambda to RichLogicalPredicate
+    private static <T> RichLogicalPredicate<T> predicate(Predicate<T> p) {
+        return t -> p.test(t);
+    }
+    
+    public static void main(String[] args) {
+        // Fluent API
+        RichLogicalPredicate<Customer> eligibleForDiscount = 
+            predicate(c -> c.lifetimeValue().greaterThan(Money.of(1000)))
+                .and(predicate(c -> c.daysSinceLastOrder() < 30))
+                .and(predicate(c -> c.hasEmailConsent()))
+                .or(predicate(c -> c.isVIP()));
+        
+        // Much more readable than nested constructors
+        Customer customer = getCustomer();
+        boolean eligible = eligibleForDiscount.test(customer);
+    }
+}
+```
+
+### Predicate Trees for Rule Engines
+
+```java
+public class RuleEngine {
+    
+    public <T> void evaluateRules(T subject, LogicalPredicate<T> rules) {
+        boolean result = rules.test(subject);
+        
+        if (rules instanceof BinaryLogicalPredicate<T> binary) {
+            System.out.println("Evaluating " + binary.getClass().getSimpleName());
+            System.out.println("  Left: " + binary.left().test(subject));
+            System.out.println("  Right: " + binary.right().test(subject));
+            System.out.println("  Result: " + result);
+        }
+    }
+    
+    public static void main(String[] args) {
+        LogicalPredicate<Integer> rule = new AndPredicate<>(
+            new OrPredicate<>(
+                (LogicalPredicate<Integer>) n -> n > 10,
+                (LogicalPredicate<Integer>) n -> n < 0
+            ),
+            (LogicalPredicate<Integer>) n -> n % 2 == 0
+        );
+        
+        RuleEngine engine = new RuleEngine();
+        engine.evaluateRules(12, rule);  // true (12 > 10 AND even)
+        engine.evaluateRules(8, rule);   // false (8 not > 10 and not < 0)
+    }
+}
+```
+
+### Dynamic Rule Construction
+
+```java
+public class DynamicRuleBuilder<T> {
+    
+    public LogicalPredicate<T> buildAnd(List<LogicalPredicate<T>> predicates) {
+        if (predicates.isEmpty()) {
+            return t -> true;
+        }
+        
+        LogicalPredicate<T> result = predicates.get(0);
+        for (int i = 1; i < predicates.size(); i++) {
+            result = new AndPredicate<>(result, predicates.get(i));
+        }
+        return result;
+    }
+    
+    public LogicalPredicate<T> buildOr(List<LogicalPredicate<T>> predicates) {
+        if (predicates.isEmpty()) {
+            return t -> false;
+        }
+        
+        LogicalPredicate<T> result = predicates.get(0);
+        for (int i = 1; i < predicates.size(); i++) {
+            result = new OrPredicate<>(result, predicates.get(i));
+        }
+        return result;
+    }
+}
+
+// Usage
+DynamicRuleBuilder<Product> builder = new DynamicRuleBuilder<>();
+
+List<LogicalPredicate<Product>> conditions = List.of(
+    p -> p.inventory() > 0,
+    p -> p.rating() >= 4.0,
+    p -> p.price().lessThan(Money.of(100))
+);
+
+LogicalPredicate<Product> allConditions = builder.buildAnd(conditions);
+// Product must satisfy ALL conditions
+
+LogicalPredicate<Product> anyCondition = builder.buildOr(conditions);
+// Product must satisfy ANY condition
+```
+
+## Testing Predicates
+
+```java
+public class PredicateTest {
+    
+    @Test
+    void andPredicateShouldRequireBothConditions() {
+        LogicalPredicate<Integer> positive = n -> n > 0;
+        LogicalPredicate<Integer> even = n -> n % 2 == 0;
+        LogicalPredicate<Integer> positiveAndEven = new AndPredicate<>(positive, even);
+        
+        assertTrue(positiveAndEven.test(2));   // positive and even
+        assertFalse(positiveAndEven.test(1));  // positive but not even
+        assertFalse(positiveAndEven.test(-2)); // even but not positive
+    }
+    
+    @Test
+    void orPredicateShouldRequireEitherCondition() {
+        LogicalPredicate<Integer> positive = n -> n > 0;
+        LogicalPredicate<Integer> even = n -> n % 2 == 0;
+        LogicalPredicate<Integer> positiveOrEven = new OrPredicate<>(positive, even);
+        
+        assertTrue(positiveOrEven.test(2));   // both
+        assertTrue(positiveOrEven.test(1));   // positive
+        assertTrue(positiveOrEven.test(-2));  // even
+        assertFalse(positiveOrEven.test(-3)); // neither
+    }
+    
+    @Test
+    void notPredicateShouldNegate() {
+        LogicalPredicate<Integer> even = n -> n % 2 == 0;
+        LogicalPredicate<Integer> odd = new NotPredicate<>(even);
+        
+        assertTrue(odd.test(1));
+        assertTrue(odd.test(3));
+        assertFalse(odd.test(2));
+        assertFalse(odd.test(4));
+    }
+}
+```
+
+## Design Patterns
+
+### Composite Pattern
+
+Predicates form a composite tree structure:
+- Leaf nodes: Base predicates (lambdas)
+- Composite nodes: AndPredicate, OrPredicate, NotPredicate
+
+### Strategy Pattern
+
+Predicates encapsulate different evaluation strategies that can be swapped:
+
+```java
+public void processCustomers(List<Customer> customers, 
+                           LogicalPredicate<Customer> strategy) {
+    customers.stream()
+        .filter(strategy)
+        .forEach(this::process);
+}
+```
+
+## Related Types
+
+- **Predicate**: Java standard functional interface
+- **LogicalPredicate**: Marker interface for composable predicates
+- **BinaryLogicalPredicate**: Base for two-operand predicates
+- **AndPredicate**: Logical AND operator
+- **OrPredicate**: Logical OR operator
+- **NotPredicate**: Logical NOT operator
+- **RichLogicalPredicate**: Fluent composition interface
+
+## References
+
+- Source: `/workspace/source/rules/src/main/java/com/softwarearchetypes/rules/predicates/`
+- LogicalPredicate: `LogicalPredicate.java:5-7`
+- BinaryLogicalPredicate: `BinaryLogicalPredicate.java:3-15`
+- AndPredicate: `AndPredicate.java:3-11`
+- OrPredicate: `OrPredicate.java:3-11`

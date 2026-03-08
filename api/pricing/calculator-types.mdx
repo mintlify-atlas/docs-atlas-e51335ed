@@ -1,0 +1,576 @@
+---
+title: Calculator Types
+description: Type system and metadata for calculator implementations
+---
+
+## Overview
+
+The `CalculatorType` enum provides type identification and metadata for all calculator implementations. Each type defines:
+
+- Type identifier string
+- Description template
+- Required creation fields
+- Required calculation parameters
+
+## CalculatorType Enum
+
+```java
+public enum CalculatorType {
+    SIMPLE_FIXED,
+    SIMPLE_INTEREST,
+    STEP_FUNCTION,
+    DISCRETE_POINTS,
+    DAILY_INCREMENT,
+    CONTINUOUS_LINEAR_TIME,
+    COMPOSITE,
+    PERCENTAGE,
+    
+    // Price Adapters
+    UNIT_TO_TOTAL_ADAPTER,
+    UNIT_TO_MARGINAL_ADAPTER,
+    TOTAL_TO_UNIT_ADAPTER,
+    TOTAL_TO_MARGINAL_ADAPTER,
+    MARGINAL_TO_TOTAL_ADAPTER,
+    MARGINAL_TO_UNIT_ADAPTER
+}
+```
+
+## Type Definitions
+
+### SIMPLE_FIXED
+
+<ParamField path="SIMPLE_FIXED" type="CalculatorType">
+  Fixed amount calculator - returns constant price regardless of parameters.
+
+  **Type Name:** `"simple-fixed"`
+
+  **Description Template:** `"Fixed amount calculator - returns %s regardless"`
+
+  **Required Creation Fields:**
+  - `amount` - The fixed Money amount
+
+  **Required Calculation Fields:** _(none)_
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.SIMPLE_FIXED;
+  String desc = type.formatDescription(Money.pln(99));
+  // Returns: "Fixed amount calculator - returns PLN 99.00 regardless"
+  ```
+</ParamField>
+
+### SIMPLE_INTEREST
+
+<ParamField path="SIMPLE_INTEREST" type="CalculatorType">
+  Annual interest calculator - calculates simple interest based on annual rate.
+
+  **Type Name:** `"simple-interest"`
+
+  **Description Template:** `"Annual interest calculator - calculates %s%% annual interest based on base and time unit"`
+
+  **Required Creation Fields:**
+  - `annualRate` - Annual interest rate as BigDecimal
+
+  **Required Calculation Fields:**
+  - `base` - Base amount (Money)
+  - `unit` - Time unit (ChronoUnit)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.SIMPLE_INTEREST;
+  String desc = type.formatDescription(BigDecimal.valueOf(5.5));
+  // Returns: "Annual interest calculator - calculates 5.5% annual interest..."
+  
+  Set<String> requiredParams = type.requiredCalculationFields();
+  // Returns: ["base", "unit"]
+  ```
+</ParamField>
+
+### STEP_FUNCTION
+
+<ParamField path="STEP_FUNCTION" type="CalculatorType">
+  Step function calculator - base price + increments every N units.
+
+  **Type Name:** `"step-function"`
+
+  **Description Template:** `"Step function calculator - base price %s PLN + increments every %s units"`
+
+  **Required Creation Fields:**
+  - `basePrice` - Base price (Money)
+  - `stepSize` - Step size (BigDecimal)
+  - `stepIncrement` - Increment amount (BigDecimal)
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to calculate for (BigDecimal)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.STEP_FUNCTION;
+  Set<String> creationFields = type.requiredCreationFields();
+  // Returns: ["basePrice", "stepSize", "stepIncrement"]
+  
+  Set<String> calcFields = type.requiredCalculationFields();
+  // Returns: ["quantity"]
+  ```
+</ParamField>
+
+### DISCRETE_POINTS
+
+<ParamField path="DISCRETE_POINTS" type="CalculatorType">
+  Discrete points calculator - price lookup from predefined quantity-price pairs.
+
+  **Type Name:** `"discrete-points"`
+
+  **Description Template:** `"Discrete points calculator - price lookup from predefined points"`
+
+  **Required Creation Fields:**
+  - `points` - Map of BigDecimal to Money
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to look up (BigDecimal)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.DISCRETE_POINTS;
+  String typeName = type.getTypeName();
+  // Returns: "discrete-points"
+  ```
+</ParamField>
+
+### DAILY_INCREMENT
+
+<ParamField path="DAILY_INCREMENT" type="CalculatorType">
+  Daily increment calculator - discrete daily price changes.
+
+  **Type Name:** `"daily-increment"`
+
+  **Description Template:** `"Daily increment calculator - starts at %s, grows by %s per day (discrete)"`
+
+  **Required Creation Fields:**
+  - `startDate` - Starting date (LocalDate)
+  - `startPrice` - Starting price (Money)
+  - `dailyIncrement` - Daily change amount (Money)
+
+  **Required Calculation Fields:**
+  - `date` - Date to calculate for (LocalDate)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.DAILY_INCREMENT;
+  Set<String> calcFields = type.requiredCalculationFields();
+  // Returns: ["date"]
+  ```
+</ParamField>
+
+### CONTINUOUS_LINEAR_TIME
+
+<ParamField path="CONTINUOUS_LINEAR_TIME" type="CalculatorType">
+  Continuous linear time calculator - interpolates price between start and end times.
+
+  **Type Name:** `"continuous-linear-time"`
+
+  **Description Template:** `"Continuous linear time calculator - interpolates between %s and %s"`
+
+  **Required Creation Fields:**
+  - `startTime` - Start time (LocalDateTime)
+  - `startPrice` - Price at start (Money)
+  - `endTime` - End time (LocalDateTime)
+  - `endPrice` - Price at end (Money)
+
+  **Required Calculation Fields:**
+  - `time` - Time to calculate for (LocalDateTime)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.CONTINUOUS_LINEAR_TIME;
+  Set<String> creationFields = type.requiredCreationFields();
+  // Returns: ["startTime", "startPrice", "endTime", "endPrice"]
+  ```
+</ParamField>
+
+### COMPOSITE
+
+<ParamField path="COMPOSITE" type="CalculatorType">
+  Composite function calculator - piecewise function delegating to different calculators.
+
+  **Type Name:** `"composite"`
+
+  **Description Template:** `"Composite function calculator - delegates to different calculators based on parameter ranges"`
+
+  **Required Creation Fields:**
+  - `ranges` - Range definitions (Ranges)
+  - `rangeSelector` - Parameter name to use for range matching
+
+  **Required Calculation Fields:** _(depends on component calculators)_
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.COMPOSITE;
+  String typeName = type.getTypeName();
+  // Returns: "composite"
+  ```
+</ParamField>
+
+### PERCENTAGE
+
+<ParamField path="PERCENTAGE" type="CalculatorType">
+  Percentage calculator - calculates percentage of base amount.
+
+  **Type Name:** `"percentage"`
+
+  **Description Template:** `"Percentage calculator - calculates %s%% of base amount"`
+
+  **Required Creation Fields:**
+  - `percentageRate` - Percentage rate (BigDecimal)
+
+  **Required Calculation Fields:**
+  - `baseAmount` - Base amount to calculate percentage of (Money)
+
+  **Example:**
+  ```java
+  CalculatorType type = CalculatorType.PERCENTAGE;
+  String desc = type.formatDescription(BigDecimal.valueOf(15));
+  // Returns: "Percentage calculator - calculates 15% of base amount"
+  ```
+</ParamField>
+
+## Price Adapter Types
+
+Price adapters convert between different interpretations. They wrap existing calculators.
+
+### UNIT_TO_TOTAL_ADAPTER
+
+<ParamField path="UNIT_TO_TOTAL_ADAPTER" type="CalculatorType">
+  Converts unit price to total price.
+
+  **Type Name:** `"unit-to-total-adapter"`
+
+  **Description:** `"Converts unit price to total: total = quantity × unitPrice"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to multiply by (BigDecimal)
+
+  **Formula:** `Total = UnitPrice × quantity`
+</ParamField>
+
+### UNIT_TO_MARGINAL_ADAPTER
+
+<ParamField path="UNIT_TO_MARGINAL_ADAPTER" type="CalculatorType">
+  Converts unit price to marginal price.
+
+  **Type Name:** `"unit-to-marginal-adapter"`
+
+  **Description:** `"Converts unit price to marginal: for constant unit price, marginal = unitPrice"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity position (BigDecimal)
+
+  **Formula:** `Marginal(n) = (UnitPrice(n) × n) - (UnitPrice(n-1) × (n-1))`
+</ParamField>
+
+### TOTAL_TO_UNIT_ADAPTER
+
+<ParamField path="TOTAL_TO_UNIT_ADAPTER" type="CalculatorType">
+  Converts total price to average unit price.
+
+  **Type Name:** `"total-to-unit-adapter"`
+
+  **Description:** `"Converts total price to unit price: unitPrice = total / quantity"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to divide by (BigDecimal)
+
+  **Formula:** `UnitPrice = Total / quantity`
+</ParamField>
+
+### TOTAL_TO_MARGINAL_ADAPTER
+
+<ParamField path="TOTAL_TO_MARGINAL_ADAPTER" type="CalculatorType">
+  Converts total price to marginal price.
+
+  **Type Name:** `"total-to-marginal-adapter"`
+
+  **Description:** `"Converts total to marginal: marginal(n) = total(n) - total(n-1)"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity position (BigDecimal)
+
+  **Formula:** `Marginal(n) = Total(n) - Total(n-1)`
+</ParamField>
+
+### MARGINAL_TO_TOTAL_ADAPTER
+
+<ParamField path="MARGINAL_TO_TOTAL_ADAPTER" type="CalculatorType">
+  Converts marginal price to total price.
+
+  **Type Name:** `"marginal-to-total-adapter"`
+
+  **Description:** `"Converts marginal to total: total = Σ marginal(i) for i=1..quantity"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to sum to (BigDecimal)
+
+  **Formula:** `Total(q) = Σ[i=1→q] Marginal(i)`
+
+  <Warning>
+    This adapter is expensive for large quantities as it requires q calculator calls.
+  </Warning>
+</ParamField>
+
+### MARGINAL_TO_UNIT_ADAPTER
+
+<ParamField path="MARGINAL_TO_UNIT_ADAPTER" type="CalculatorType">
+  Converts marginal price to average unit price.
+
+  **Type Name:** `"marginal-to-unit-adapter"`
+
+  **Description:** `"Converts marginal to unit price: unitPrice = Σ marginal(i) / quantity"`
+
+  **Required Calculation Fields:**
+  - `quantity` - Quantity to average over (BigDecimal)
+
+  **Formula:** `UnitPrice(q) = (Σ[i=1→q] Marginal(i)) / q`
+
+  <Warning>
+    This adapter is expensive for large quantities as it requires q calculator calls.
+  </Warning>
+</ParamField>
+
+## Type Methods
+
+### getTypeName()
+
+```java
+public String getTypeName()
+```
+
+Returns the string identifier for this calculator type.
+
+**Example:**
+```java
+CalculatorType type = CalculatorType.STEP_FUNCTION;
+String name = type.getTypeName();
+// Returns: "step-function"
+```
+
+### formatDescription()
+
+```java
+public String formatDescription(Object value)
+```
+
+Formats the description template with the provided value.
+
+**Parameters:**
+- `value` - Value to insert into the description template
+
+**Returns:**
+- Formatted description string
+
+**Example:**
+```java
+CalculatorType type = CalculatorType.SIMPLE_FIXED;
+String desc = type.formatDescription(Money.pln(99));
+// Returns: "Fixed amount calculator - returns PLN 99.00 regardless"
+```
+
+### requiredCreationFields()
+
+```java
+public Set<String> requiredCreationFields()
+```
+
+Returns the fields required to construct a calculator of this type.
+
+**Returns:**
+- Set of field names required for constructor
+
+**Example:**
+```java
+CalculatorType type = CalculatorType.STEP_FUNCTION;
+Set<String> fields = type.requiredCreationFields();
+// Returns: ["basePrice", "stepSize", "stepIncrement"]
+```
+
+### requiredCalculationFields()
+
+```java
+Set<String> requiredCalculationFields()
+```
+
+Returns the parameter fields required to perform calculations.
+
+**Returns:**
+- Set of parameter names required for `calculate()`
+
+**Example:**
+```java
+CalculatorType type = CalculatorType.SIMPLE_INTEREST;
+Set<String> fields = type.requiredCalculationFields();
+// Returns: ["base", "unit"]
+```
+
+## CalculatorId
+
+Unique identifier for calculator instances.
+
+```java
+public record CalculatorId(UUID id) {
+    public static CalculatorId generate();
+    public String toString();
+}
+```
+
+### Example
+
+```java
+// Generate new ID
+CalculatorId id = CalculatorId.generate();
+System.out.println(id);
+// Prints: "550e8400-e29b-41d4-a716-446655440000" (UUID format)
+
+// Use in calculator
+Calculator calc = new SimpleFixedCalculator(
+    id,                      // explicit ID
+    "Monthly Fee",
+    Money.pln(99),
+    Interpretation.TOTAL
+);
+
+CalculatorId retrievedId = calc.getId();
+// Returns the same ID
+```
+
+## CalculatorView
+
+Data transfer object for calculator information.
+
+```java
+public record CalculatorView(
+    CalculatorId id,
+    String name,
+    CalculatorType type
+) {}
+```
+
+### Example
+
+```java
+// Create view from calculator
+Calculator calc = new SimpleFixedCalculator("Fee", Money.pln(99));
+CalculatorView view = new CalculatorView(
+    calc.getId(),
+    calc.name(),
+    calc.getType()
+);
+
+// Use in API response
+return Response.ok(view).build();
+```
+
+## StepBoundary
+
+Defines how step boundaries are calculated in step function calculators.
+
+```java
+public enum StepBoundary {
+    EXCLUSIVE,  // [0, N), [N, 2N), [2N, 3N)...
+    INCLUSIVE   // [0, N], [N+1, 2N+1], [2N+2, 3N+2]...
+}
+```
+
+### EXCLUSIVE (default)
+
+<ParamField path="EXCLUSIVE" type="StepBoundary">
+  Exclusive upper boundary.
+
+  **Step Calculation:** `floor(quantity / stepSize)`
+
+  **Example with stepSize=5:**
+  - quantities 0-4 → step 0
+  - quantities 5-9 → step 1
+  - quantities 10-14 → step 2
+
+  **Range Notation:** `[0, 5), [5, 10), [10, 15), ...`
+
+  **Usage:**
+  ```java
+  Calculator calc = new StepFunctionCalculator(
+      "Volume Pricing",
+      Money.pln(100),
+      BigDecimal.valueOf(5),
+      BigDecimal.valueOf(10),
+      Interpretation.TOTAL,
+      StepBoundary.EXCLUSIVE
+  );
+  
+  // quantity=4 → step 0
+  // quantity=5 → step 1 (boundary crossed)
+  ```
+</ParamField>
+
+### INCLUSIVE
+
+<ParamField path="INCLUSIVE" type="StepBoundary">
+  Inclusive upper boundary.
+
+  **Step Calculation:** `floor((quantity - 1) / stepSize)` for quantity > 0
+
+  **Example with stepSize=5:**
+  - quantities 0-5 → step 0
+  - quantities 6-10 → step 1
+  - quantities 11-15 → step 2
+
+  **Range Notation:** `[0, 5], [6, 10], [11, 15], ...`
+
+  **Usage:**
+  ```java
+  Calculator calc = new StepFunctionCalculator(
+      "Tier Pricing",
+      Money.pln(100),
+      BigDecimal.valueOf(5),
+      BigDecimal.valueOf(10),
+      Interpretation.TOTAL,
+      StepBoundary.INCLUSIVE
+  );
+  
+  // quantity=5 → step 0 (still in first tier)
+  // quantity=6 → step 1 (boundary crossed)
+  ```
+
+  **Use Case:**
+  "Up to 5 units" pricing where 5 is included in the first tier.
+</ParamField>
+
+## Type Validation Example
+
+```java
+// Validate parameters before calculation
+Calculator calculator = new StepFunctionCalculator(
+    "Volume Pricing",
+    Money.pln(100),
+    BigDecimal.valueOf(10),
+    BigDecimal.valueOf(5)
+);
+
+CalculatorType type = calculator.getType();
+Set<String> required = type.requiredCalculationFields();
+// Returns: ["quantity"]
+
+Parameters params = Parameters.of("quantity", BigDecimal.valueOf(15));
+
+if (!params.containsAll(required)) {
+    throw new IllegalArgumentException(
+        "Missing required parameters: " + required
+    );
+}
+
+Money price = calculator.calculate(params);
+// Calculation proceeds safely
+```
+
+## Related Documentation
+
+- [Calculator Interface](/api/pricing/calculator) - Core calculator implementations
+- [Parameters](/api/pricing/parameters) - Parameter handling
+- [Interpretation](/api/pricing/interpretation) - Price interpretation semantics

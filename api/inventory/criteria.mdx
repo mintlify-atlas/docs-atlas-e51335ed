@@ -1,0 +1,460 @@
+---
+title: "InstanceCriteria"
+description: "Specification pattern for filtering product instances"
+---
+
+## Overview
+
+`InstanceCriteria` is a specification pattern for filtering product instances. It supports composition via `and()`, `or()`, and `not()` operations for building complex queries.
+
+**Package:** `com.softwarearchetypes.inventory`
+
+**Source:** `/inventory/src/main/java/com/softwarearchetypes/inventory/InstanceCriteria.java:12`
+
+## Interface
+
+```java
+@FunctionalInterface
+public interface InstanceCriteria
+```
+
+Functional interface that can be used with lambda expressions.
+
+## Core Method
+
+### isSatisfiedBy
+
+```java
+boolean isSatisfiedBy(Instance instance)
+```
+
+Tests whether an instance satisfies this criteria.
+
+<ParamField path="instance" type="Instance" required>
+  The instance to test
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the instance satisfies the criteria, `false` otherwise
+</ResponseField>
+
+## Composition Methods
+
+### and
+
+```java
+default InstanceCriteria and(InstanceCriteria other)
+```
+
+Combines this criteria with another using AND logic.
+
+<ParamField path="other" type="InstanceCriteria" required>
+  The other criteria to combine with
+</ParamField>
+
+<ResponseField name="return" type="InstanceCriteria">
+  New criteria that is satisfied only if both criteria are satisfied
+</ResponseField>
+
+**Example:**
+```java
+InstanceCriteria blackPhones = byColor("Black")
+    .and(byProduct(phoneProductId));
+
+assert blackPhones.isSatisfiedBy(blackPhone);  // true
+assert !blackPhones.isSatisfiedBy(whitePhone); // false (wrong color)
+assert !blackPhones.isSatisfiedBy(blackLaptop); // false (wrong product)
+```
+
+### or
+
+```java
+default InstanceCriteria or(InstanceCriteria other)
+```
+
+Combines this criteria with another using OR logic.
+
+<ParamField path="other" type="InstanceCriteria" required>
+  The other criteria to combine with
+</ParamField>
+
+<ResponseField name="return" type="InstanceCriteria">
+  New criteria that is satisfied if either criteria is satisfied
+</ResponseField>
+
+**Example:**
+```java
+InstanceCriteria blackOrWhite = byColor("Black")
+    .or(byColor("White"));
+
+assert blackOrWhite.isSatisfiedBy(blackPhone); // true
+assert blackOrWhite.isSatisfiedBy(whitePhone); // true
+assert !blackOrWhite.isSatisfiedBy(redPhone);  // false
+```
+
+### not
+
+```java
+default InstanceCriteria not()
+```
+
+Negates this criteria.
+
+<ResponseField name="return" type="InstanceCriteria">
+  New criteria that is satisfied when this criteria is not satisfied
+</ResponseField>
+
+**Example:**
+```java
+InstanceCriteria notBlack = byColor("Black").not();
+
+assert !notBlack.isSatisfiedBy(blackPhone); // false
+assert notBlack.isSatisfiedBy(whitePhone);  // true
+```
+
+## Factory Methods
+
+### any
+
+```java
+static InstanceCriteria any()
+```
+
+Creates a criteria that matches any instance.
+
+<ResponseField name="return" type="InstanceCriteria">
+  Criteria that always returns `true`
+</ResponseField>
+
+**Example:**
+```java
+InstanceCriteria all = InstanceCriteria.any();
+
+assert all.isSatisfiedBy(anyInstance); // always true
+```
+
+### none
+
+```java
+static InstanceCriteria none()
+```
+
+Creates a criteria that matches no instances.
+
+<ResponseField name="return" type="InstanceCriteria">
+  Criteria that always returns `false`
+</ResponseField>
+
+**Example:**
+```java
+InstanceCriteria nothing = InstanceCriteria.none();
+
+assert !nothing.isSatisfiedBy(anyInstance); // always false
+```
+
+### byBatch
+
+```java
+static InstanceCriteria byBatch(BatchId batchId)
+```
+
+Creates a criteria that matches instances from a specific batch.
+
+<ParamField path="batchId" type="BatchId" required>
+  The batch ID to match
+</ParamField>
+
+<ResponseField name="return" type="InstanceCriteria">
+  Criteria that matches instances from the given batch
+</ResponseField>
+
+**Example:**
+```java
+BatchId milkBatch = BatchId.of("MILK-2024-03-08-A");
+InstanceCriteria fromBatch = InstanceCriteria.byBatch(milkBatch);
+
+Instance milkFromBatch = // ... instance with this batch ID
+Instance milkFromOtherBatch = // ... instance with different batch ID
+
+assert fromBatch.isSatisfiedBy(milkFromBatch);      // true
+assert !fromBatch.isSatisfiedBy(milkFromOtherBatch); // false
+```
+
+### bySerial
+
+```java
+static InstanceCriteria bySerial(SerialNumber serialNumber)
+```
+
+Creates a criteria that matches instances with a specific serial number.
+
+<ParamField path="serialNumber" type="SerialNumber" required>
+  The serial number to match
+</ParamField>
+
+<ResponseField name="return" type="InstanceCriteria">
+  Criteria that matches instances with the given serial number
+</ResponseField>
+
+**Example:**
+```java
+SerialNumber imei = new ImeiSerialNumber("353456789012345");
+InstanceCriteria byIMEI = InstanceCriteria.bySerial(imei);
+
+Instance phoneWithIMEI = // ... instance with this IMEI
+Instance differentPhone = // ... instance with different IMEI
+
+assert byIMEI.isSatisfiedBy(phoneWithIMEI);    // true
+assert !byIMEI.isSatisfiedBy(differentPhone);  // false
+```
+
+### custom
+
+```java
+static InstanceCriteria custom(Predicate<Instance> predicate)
+```
+
+Creates a criteria from a custom predicate.
+
+<ParamField path="predicate" type="Predicate<Instance>" required>
+  The predicate to use
+</ParamField>
+
+<ResponseField name="return" type="InstanceCriteria">
+  Criteria based on the given predicate
+</ResponseField>
+
+**Example:**
+```java
+// Match instances with quantity > 10
+InstanceCriteria largeQuantities = InstanceCriteria.custom(
+    instance -> instance.quantity()
+        .map(q -> q.amount().compareTo(BigDecimal.valueOf(10)) > 0)
+        .orElse(false)
+);
+
+// Match instances with specific feature value
+InstanceCriteria redItems = InstanceCriteria.custom(
+    instance -> {
+        if (instance instanceof ProductInstance pi) {
+            return pi.getFeatureValue("Color")
+                .map(v -> v.equals("Red"))
+                .orElse(false);
+        }
+        return false;
+    }
+);
+```
+
+## Usage Examples
+
+### Simple Filtering
+
+```java
+// Find all instances from a specific batch
+BatchId batch = BatchId.of("BATCH-2024-001");
+InstanceCriteria criteria = InstanceCriteria.byBatch(batch);
+
+List<Instance> instances = repository.findAll();
+List<Instance> filtered = instances.stream()
+    .filter(criteria::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+### Complex Queries
+
+```java
+// Find black phones from batch A OR white phones from batch B
+InstanceCriteria complex = 
+    byColor("Black").and(byBatch(batchA))
+    .or(byColor("White").and(byBatch(batchB)));
+
+List<Instance> results = instances.stream()
+    .filter(complex::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+### Excluding Items
+
+```java
+// Find all instances except those from a specific batch
+BatchId excludedBatch = BatchId.of("RECALLED-BATCH-001");
+InstanceCriteria notFromBatch = InstanceCriteria.byBatch(excludedBatch).not();
+
+List<Instance> safe = instances.stream()
+    .filter(notFromBatch::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+### Lambda Expressions
+
+```java
+// Using lambda directly
+InstanceCriteria hasSerial = instance -> instance.serialNumber().isPresent();
+
+// Combining with standard criteria
+InstanceCriteria serialedFromBatch = hasSerial
+    .and(InstanceCriteria.byBatch(batchId));
+```
+
+## Practical Examples
+
+### Recall Management
+
+```java
+// Find all affected instances for a product recall
+BatchId recalledBatch = BatchId.of("RECALLED-2024-001");
+ProductIdentifier recalledProduct = ProductIdentifier.of("PROD-XYZ");
+
+InstanceCriteria recallCriteria = InstanceCriteria.custom(
+    instance -> instance.productId().equals(recalledProduct)
+).and(InstanceCriteria.byBatch(recalledBatch));
+
+List<Instance> affected = repository.findAll().stream()
+    .filter(recallCriteria::isSatisfiedBy)
+    .collect(Collectors.toList());
+
+System.out.println("Found " + affected.size() + " affected instances");
+```
+
+### Expiry Management
+
+```java
+// Find instances expiring soon
+Instant expiryThreshold = Instant.now().plus(Duration.ofDays(7));
+
+InstanceCriteria expiringSoon = InstanceCriteria.custom(instance -> {
+    // Assuming instances can have expiry metadata via batch
+    return instance.batchId()
+        .flatMap(batchRepository::findById)
+        .flatMap(Batch::bestBefore)
+        .map(bestBefore -> bestBefore.isBefore(expiryThreshold))
+        .orElse(false);
+});
+
+List<Instance> expiring = inventory.stream()
+    .filter(expiringSoon::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+### Warranty Tracking
+
+```java
+// Find all instances sold in a specific date range
+Instant startDate = Instant.parse("2024-01-01T00:00:00Z");
+Instant endDate = Instant.parse("2024-12-31T23:59:59Z");
+
+InstanceCriteria soldInRange = InstanceCriteria.custom(instance -> {
+    // Assuming instances track sale date
+    return instance.getSaleDate()
+        .map(date -> !date.isBefore(startDate) && !date.isAfter(endDate))
+        .orElse(false);
+});
+
+List<Instance> soldIn2024 = instances.stream()
+    .filter(soldInRange::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+### Quality Control
+
+```java
+// Find instances failing quality criteria
+InstanceCriteria qualityIssues = InstanceCriteria.custom(instance -> {
+    // Check if from problem batch OR has quality flag
+    boolean fromProblemBatch = instance.batchId()
+        .map(problemBatches::contains)
+        .orElse(false);
+    
+    boolean hasQualityFlag = instance.getMetadata("quality_flag")
+        .map(flag -> flag.equals("DEFECTIVE"))
+        .orElse(false);
+    
+    return fromProblemBatch || hasQualityFlag;
+});
+
+List<Instance> defective = instances.stream()
+    .filter(qualityIssues::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+## Integration with Repository
+
+Repositories can accept criteria for filtering:
+
+```java
+public interface InstanceRepository {
+    List<Instance> findByCriteria(InstanceCriteria criteria);
+    long countByCriteria(InstanceCriteria criteria);
+    boolean existsByCriteria(InstanceCriteria criteria);
+}
+
+// Usage
+InstanceCriteria criteria = InstanceCriteria.byBatch(batchId)
+    .and(InstanceCriteria.custom(
+        instance -> instance.quantity().isPresent()
+    ));
+
+List<Instance> results = repository.findByCriteria(criteria);
+long count = repository.countByCriteria(criteria);
+```
+
+## Performance Considerations
+
+**In-Memory Filtering:**
+```java
+// Good for small datasets
+List<Instance> filtered = allInstances.stream()
+    .filter(criteria::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+**Database Filtering:**
+```java
+// Better for large datasets - push criteria to database
+public interface InstanceRepository {
+    List<Instance> findByBatch(BatchId batchId);
+    List<Instance> findBySerialNumber(SerialNumber serialNumber);
+    List<Instance> findByProductId(ProductIdentifier productId);
+}
+
+// Use specific repository methods when possible
+List<Instance> instances = repository.findByBatch(batchId);
+
+// Then apply additional filtering in-memory if needed
+InstanceCriteria additionalFilter = InstanceCriteria.custom(...);
+List<Instance> refined = instances.stream()
+    .filter(additionalFilter::isSatisfiedBy)
+    .collect(Collectors.toList());
+```
+
+## Reusable Criteria
+
+Define common criteria as constants:
+
+```java
+public class CommonCriteria {
+    public static final InstanceCriteria HAS_SERIAL = 
+        instance -> instance.serialNumber().isPresent();
+    
+    public static final InstanceCriteria HAS_BATCH = 
+        instance -> instance.batchId().isPresent();
+    
+    public static final InstanceCriteria HAS_QUANTITY = 
+        instance -> instance.quantity().isPresent();
+    
+    public static InstanceCriteria forProduct(ProductIdentifier productId) {
+        return instance -> instance.productId().equals(productId);
+    }
+    
+    public static InstanceCriteria quantityGreaterThan(BigDecimal amount) {
+        return instance -> instance.quantity()
+            .map(q -> q.amount().compareTo(amount) > 0)
+            .orElse(false);
+    }
+}
+
+// Usage
+InstanceCriteria criteria = CommonCriteria.HAS_BATCH
+    .and(CommonCriteria.quantityGreaterThan(BigDecimal.valueOf(100)));
+```

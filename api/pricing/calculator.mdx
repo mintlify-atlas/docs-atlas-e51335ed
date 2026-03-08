@@ -1,0 +1,988 @@
+---
+title: Calculator Interface
+description: Core interface for price calculation implementations in the Pricing module
+---
+
+## Overview
+
+The `Calculator` interface is the foundation of the pricing system. It defines the contract for all price calculation strategies, from simple fixed prices to complex composite functions.
+
+## Interface Definition
+
+```java
+package com.softwarearchetypes.pricing;
+
+interface Calculator {
+    Money calculate(Parameters parameters);
+    String describe();
+    String formula();
+    Interpretation interpretation();
+    Map<Parameters, Money> simulate(List<Parameters> points);
+    CalculatorType getType();
+    CalculatorId getId();
+    String name();
+}
+```
+
+## Core Methods
+
+### calculate()
+
+<ParamField path="calculate" type="Money calculate(Parameters parameters)">
+  Performs the actual price calculation based on the provided parameters.
+
+  **Parameters:**
+  - `parameters` - Input parameters required for calculation (e.g., quantity, date, time)
+
+  **Returns:**
+  - `Money` - Calculated price with currency
+
+  **Throws:**
+  - `IllegalArgumentException` - If required parameters are missing
+
+  **Example:**
+  ```java
+  Calculator calculator = new SimpleFixedCalculator("Monthly Fee", Money.pln(99));
+  Parameters params = Parameters.empty();
+  Money price = calculator.calculate(params); // Returns PLN 99.00
+  ```
+</ParamField>
+
+### describe()
+
+<ParamField path="describe" type="String describe()">
+  Returns a human-readable description of what this calculator does.
+
+  **Returns:**
+  - `String` - Description of the calculator's behavior
+
+  **Example:**
+  ```java
+  StepFunctionCalculator calculator = new StepFunctionCalculator(
+      "Volume Pricing",
+      Money.pln(100),
+      BigDecimal.valueOf(10),
+      BigDecimal.valueOf(5)
+  );
+  
+  String desc = calculator.describe();
+  // Returns: "Step function calculator - base price PLN 100.00 + increments every 10 units"
+  ```
+</ParamField>
+
+### formula()
+
+<ParamField path="formula" type="String formula()">
+  Returns the mathematical formula used by this calculator.
+
+  **Returns:**
+  - `String` - Mathematical representation of the pricing function
+
+  **Example:**
+  ```java
+  SimpleInterestCalculator calculator = new SimpleInterestCalculator(
+      "Account Interest",
+      BigDecimal.valueOf(5.5)
+  );
+  
+  String formula = calculator.formula();
+  // Returns: "f(base, unit) = base × (rate/100) × (1/unitsPerYear(unit))\nwhere rate = 5.5%"
+  ```
+</ParamField>
+
+### interpretation()
+
+<ParamField path="interpretation" type="Interpretation interpretation()">
+  Returns the semantic interpretation of the calculated value.
+
+  **Returns:**
+  - `Interpretation` - One of: `TOTAL`, `UNIT`, or `MARGINAL`
+
+  **Default:**
+  - `Interpretation.TOTAL`
+
+  **See:**
+  - [Interpretation](/api/pricing/interpretation) for detailed semantics
+
+  **Example:**
+  ```java
+  Calculator calculator = new SimpleFixedCalculator(
+      "Base Price",
+      Money.pln(50),
+      Interpretation.UNIT
+  );
+  
+  Interpretation interp = calculator.interpretation(); // Returns UNIT
+  ```
+</ParamField>
+
+### simulate()
+
+<ParamField path="simulate" type="Map<Parameters, Money> simulate(List<Parameters> points)">
+  Simulates calculation for multiple parameter sets (scenario analysis).
+
+  **Parameters:**
+  - `points` - List of parameter sets to evaluate
+
+  **Returns:**
+  - `Map<Parameters, Money>` - Map from each parameter set to its calculated price
+
+  **Default Implementation:**
+  Iterates through points and calls `calculate()` for each.
+
+  **Example:**
+  ```java
+  Calculator calculator = new StepFunctionCalculator(
+      "Volume Pricing",
+      Money.pln(100),
+      BigDecimal.valueOf(10),
+      BigDecimal.valueOf(5)
+  );
+  
+  List<Parameters> scenarios = List.of(
+      Parameters.of("quantity", BigDecimal.valueOf(5)),
+      Parameters.of("quantity", BigDecimal.valueOf(15)),
+      Parameters.of("quantity", BigDecimal.valueOf(25))
+  );
+  
+  Map<Parameters, Money> results = calculator.simulate(scenarios);
+  // Results: {quantity=5 → PLN 100.00, quantity=15 → PLN 105.00, quantity=25 → PLN 110.00}
+  ```
+</ParamField>
+
+### getType()
+
+<ParamField path="getType" type="CalculatorType getType()">
+  Returns the calculator type enum identifying this implementation.
+
+  **Returns:**
+  - `CalculatorType` - Type identifier (e.g., `SIMPLE_FIXED`, `STEP_FUNCTION`, `COMPOSITE`)
+
+  **Example:**
+  ```java
+  Calculator calculator = new SimpleFixedCalculator("Fee", Money.pln(99));
+  CalculatorType type = calculator.getType(); // Returns CalculatorType.SIMPLE_FIXED
+  ```
+</ParamField>
+
+### getId()
+
+<ParamField path="getId" type="CalculatorId getId()">
+  Returns the unique identifier for this calculator instance.
+
+  **Returns:**
+  - `CalculatorId` - UUID-based unique identifier
+
+  **Example:**
+  ```java
+  Calculator calculator = new SimpleFixedCalculator("Fee", Money.pln(99));
+  CalculatorId id = calculator.getId(); // Returns generated UUID
+  ```
+</ParamField>
+
+### name()
+
+<ParamField path="name" type="String name()">
+  Returns the human-readable name of this calculator.
+
+  **Returns:**
+  - `String` - Calculator name
+
+  **Example:**
+  ```java
+  Calculator calculator = new SimpleFixedCalculator("Monthly Subscription", Money.pln(99));
+  String name = calculator.name(); // Returns "Monthly Subscription"
+  ```
+</ParamField>
+
+## Calculator Implementations
+
+The framework provides these built-in calculator implementations:
+
+### Quantity-Based Calculators
+
+<CardGroup cols={2}>
+  <Card title="SimpleFixedCalculator" icon="dollar-sign" href="#simplefixedcalculator">
+    Returns a constant price regardless of parameters
+  </Card>
+  <Card title="StepFunctionCalculator" icon="stairs" href="#stepfunctioncalculator">
+    Price increases by fixed increments at step boundaries
+  </Card>
+  <Card title="DiscretePointsCalculator" icon="chart-scatter" href="#discretepointscalculator">
+    Looks up price from predefined quantity-price pairs
+  </Card>
+</CardGroup>
+
+### Time-Based Calculators
+
+<CardGroup cols={2}>
+  <Card title="DailyIncrementCalculator" icon="calendar-day" href="#dailyincrementcalculator">
+    Price changes by fixed amount each day (discrete)
+  </Card>
+  <Card title="ContinuousLinearTimeCalculator" icon="clock" href="#continuouslineartimecalculator">
+    Price changes continuously using linear interpolation
+  </Card>
+</CardGroup>
+
+### Financial Calculators
+
+<CardGroup cols={2}>
+  <Card title="SimpleInterestCalculator" icon="percent" href="#simpleinterestcalculator">
+    Calculates simple interest based on annual rate
+  </Card>
+  <Card title="PercentageCalculator" icon="percentage" href="#percentagecalculator">
+    Calculates percentage of a base amount
+  </Card>
+</CardGroup>
+
+### Advanced Calculators
+
+<Card title="CompositeFunctionCalculator" icon="diagram-project" href="#compositefunctioncalculator">
+  Delegates to different calculators based on parameter ranges
+</Card>
+
+---
+
+## SimpleFixedCalculator
+
+Returns a constant price regardless of input parameters.
+
+### Constructor
+
+```java
+SimpleFixedCalculator(String name, Money amount)
+SimpleFixedCalculator(String name, Money amount, Interpretation interpretation)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="amount" type="Money" required>
+  Fixed price to return
+</ParamField>
+
+<ParamField path="interpretation" type="Interpretation">
+  Semantic meaning of the amount (default: `TOTAL`)
+</ParamField>
+
+### Example
+
+```java
+// Monthly subscription fee
+Calculator subscription = new SimpleFixedCalculator(
+    "Premium Subscription",
+    Money.pln(99)
+);
+
+Money price = subscription.calculate(Parameters.empty());
+// Returns: PLN 99.00
+
+String formula = subscription.formula();
+// Returns: "f(x) = PLN 99.00"
+```
+
+### Use Cases
+
+- Fixed subscription fees
+- One-time charges
+- Flat rates
+- Base prices for composite calculations
+
+---
+
+## StepFunctionCalculator
+
+Price increases by fixed increments every N units.
+
+### Constructor
+
+```java
+StepFunctionCalculator(
+    String name,
+    Money basePrice,
+    BigDecimal stepSize,
+    BigDecimal stepIncrement
+)
+
+StepFunctionCalculator(
+    String name,
+    Money basePrice,
+    BigDecimal stepSize,
+    BigDecimal stepIncrement,
+    Interpretation interpretation,
+    StepBoundary stepBoundary
+)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="basePrice" type="Money" required>
+  Starting price at quantity 0
+</ParamField>
+
+<ParamField path="stepSize" type="BigDecimal" required>
+  Number of units per step (e.g., 10 means every 10 units)
+</ParamField>
+
+<ParamField path="stepIncrement" type="BigDecimal" required>
+  Amount to add at each step boundary
+</ParamField>
+
+<ParamField path="interpretation" type="Interpretation">
+  Semantic meaning (default: `TOTAL`)
+</ParamField>
+
+<ParamField path="stepBoundary" type="StepBoundary">
+  Boundary calculation mode (default: `EXCLUSIVE`)
+  - `EXCLUSIVE`: [0,10), [10,20), [20,30)...
+  - `INCLUSIVE`: [0,10], [11,20], [21,30]...
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="quantity" type="BigDecimal" required>
+  The quantity to calculate price for
+</ResponseField>
+
+### Example
+
+```java
+// Volume pricing: base PLN 100, increases PLN 5 every 10 units
+Calculator volumePricing = new StepFunctionCalculator(
+    "Volume Pricing",
+    Money.pln(100),              // base price
+    BigDecimal.valueOf(10),      // step size
+    BigDecimal.valueOf(5)        // step increment
+);
+
+// Quantity 5: base price
+Money price1 = volumePricing.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(5))
+);
+// Returns: PLN 100.00 (0 complete steps)
+
+// Quantity 15: one step increment
+Money price2 = volumePricing.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 105.00 (1 complete step: floor(15/10) = 1)
+
+// Quantity 35: three step increments
+Money price3 = volumePricing.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(35))
+);
+// Returns: PLN 115.00 (3 complete steps: floor(35/10) = 3)
+```
+
+### Formula
+
+```
+f(quantity) = basePrice + ⌊quantity/stepSize⌋ × stepIncrement
+```
+
+### Use Cases
+
+- Volume discounts (inverse: negative stepIncrement)
+- Tiered pricing
+- Bulk pricing structures
+- Progressive fee schedules
+
+---
+
+## DiscretePointsCalculator
+
+Looks up price from predefined quantity-price pairs. Throws exception if quantity is not defined.
+
+### Constructor
+
+```java
+DiscretePointsCalculator(String name, Map<BigDecimal, Money> points)
+DiscretePointsCalculator(String name, Map<BigDecimal, Money> points, Interpretation interpretation)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="points" type="Map<BigDecimal, Money>" required>
+  Map of quantity to price (exact matches only)
+</ParamField>
+
+<ParamField path="interpretation" type="Interpretation">
+  Semantic meaning (default: `TOTAL`)
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="quantity" type="BigDecimal" required>
+  Must exactly match a key in the points map
+</ResponseField>
+
+### Example
+
+```java
+// Package pricing: only specific quantities available
+Map<BigDecimal, Money> packagePrices = Map.of(
+    BigDecimal.valueOf(5),  Money.pln(100),
+    BigDecimal.valueOf(10), Money.pln(180),
+    BigDecimal.valueOf(20), Money.pln(350)
+);
+
+Calculator packagePricing = new DiscretePointsCalculator(
+    "Package Deals",
+    packagePrices
+);
+
+// Valid quantity
+Money price1 = packagePricing.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(10))
+);
+// Returns: PLN 180.00
+
+// Invalid quantity throws exception
+Money price2 = packagePricing.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(7))
+);
+// Throws: IllegalArgumentException - "Quantity 7 is not defined in the price points"
+```
+
+### Use Cases
+
+- Package deals ("Buy 5, 10, or 20")
+- Predefined bundles
+- Non-continuous pricing
+- Catalog pricing
+
+---
+
+## SimpleInterestCalculator
+
+Calculates simple interest based on annual rate and time unit.
+
+### Constructor
+
+```java
+SimpleInterestCalculator(String name, BigDecimal annualRate)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="annualRate" type="BigDecimal" required>
+  Annual interest rate as percentage (e.g., 5.5 for 5.5%)
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="base" type="Money" required>
+  Base amount to calculate interest on
+</ResponseField>
+
+<ResponseField name="unit" type="ChronoUnit" required>
+  Time unit for calculation (`DAYS`, `WEEKS`, `MONTHS`, `YEARS`)
+</ResponseField>
+
+### Example
+
+```java
+// 5.5% annual interest
+Calculator interest = new SimpleInterestCalculator(
+    "Account Interest",
+    BigDecimal.valueOf(5.5)
+);
+
+// Daily interest on PLN 1000
+Money dailyInterest = interest.calculate(
+    Parameters.of(
+        "base", Money.pln(1000),
+        "unit", ChronoUnit.DAYS
+    )
+);
+// Returns: PLN 0.15 (1000 × 0.055 / 365)
+
+// Monthly interest
+Money monthlyInterest = interest.calculate(
+    Parameters.of(
+        "base", Money.pln(1000),
+        "unit", ChronoUnit.MONTHS
+    )
+);
+// Returns: PLN 4.58 (1000 × 0.055 / 12)
+```
+
+### Formula
+
+```
+f(base, unit) = base × (rate/100) × (1/unitsPerYear(unit))
+```
+
+Where `unitsPerYear(unit)` returns:
+- `DAYS` → 365
+- `WEEKS` → 52
+- `MONTHS` → 12
+- `YEARS` → 1
+
+---
+
+## DailyIncrementCalculator
+
+Price changes by a fixed amount each day (discrete, not continuous).
+
+### Constructor
+
+```java
+DailyIncrementCalculator(
+    String name,
+    LocalDate startDate,
+    Money startPrice,
+    Money dailyIncrement
+)
+
+DailyIncrementCalculator(
+    String name,
+    LocalDate startDate,
+    Money startPrice,
+    Money dailyIncrement,
+    Interpretation interpretation
+)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="startDate" type="LocalDate" required>
+  Date when pricing starts
+</ParamField>
+
+<ParamField path="startPrice" type="Money" required>
+  Price on the start date
+</ParamField>
+
+<ParamField path="dailyIncrement" type="Money" required>
+  Amount to add/subtract per day
+</ParamField>
+
+<ParamField path="interpretation" type="Interpretation">
+  Semantic meaning (default: `TOTAL`)
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="date" type="LocalDate" required>
+  Date to calculate price for
+</ResponseField>
+
+### Example
+
+```java
+// Pre-sale pricing: increases PLN 100 per day over 14 days
+Calculator preSale = new DailyIncrementCalculator(
+    "Conference Pre-sale",
+    LocalDate.of(2024, 6, 1),   // start date
+    Money.pln(1999),            // start price
+    Money.pln(100)              // daily increment
+);
+
+// Day 0 (start date)
+Money price1 = preSale.calculate(
+    Parameters.of("date", LocalDate.of(2024, 6, 1))
+);
+// Returns: PLN 1999.00
+
+// Day 7
+Money price2 = preSale.calculate(
+    Parameters.of("date", LocalDate.of(2024, 6, 8))
+);
+// Returns: PLN 2699.00 (1999 + 7×100)
+
+// Day 14
+Money price3 = preSale.calculate(
+    Parameters.of("date", LocalDate.of(2024, 6, 15))
+);
+// Returns: PLN 3399.00 (1999 + 14×100)
+```
+
+### Formula
+
+```
+f(date) = startPrice + daysFromStart × dailyIncrement
+where daysFromStart = DAYS.between(startDate, date)
+```
+
+### Use Cases
+
+- Early bird pricing
+- Pre-sale campaigns
+- Time-limited promotions
+- Depreciation schedules
+
+---
+
+## ContinuousLinearTimeCalculator
+
+Price changes continuously based on precise time using linear interpolation.
+
+### Constructor
+
+```java
+ContinuousLinearTimeCalculator(
+    String name,
+    LocalDateTime startTime,
+    Money startPrice,
+    LocalDateTime endTime,
+    Money endPrice
+)
+
+ContinuousLinearTimeCalculator(
+    String name,
+    LocalDateTime startTime,
+    Money startPrice,
+    LocalDateTime endTime,
+    Money endPrice,
+    Interpretation interpretation
+)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="startTime" type="LocalDateTime" required>
+  Start time of the pricing period
+</ParamField>
+
+<ParamField path="startPrice" type="Money" required>
+  Price at start time
+</ParamField>
+
+<ParamField path="endTime" type="LocalDateTime" required>
+  End time of the pricing period
+</ParamField>
+
+<ParamField path="endPrice" type="Money" required>
+  Price at end time
+</ParamField>
+
+<ParamField path="interpretation" type="Interpretation">
+  Semantic meaning (default: `TOTAL`)
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="time" type="LocalDateTime" required>
+  Must be between startTime and endTime (inclusive start, inclusive end)
+</ResponseField>
+
+### Example
+
+```java
+// Auction: price increases from PLN 1999 to PLN 3399 over 14 days
+Calculator auction = new ContinuousLinearTimeCalculator(
+    "Conference Auction",
+    LocalDateTime.of(2024, 6, 1, 0, 0),    // June 1, midnight
+    Money.pln(1999),
+    LocalDateTime.of(2024, 6, 15, 0, 0),   // June 15, midnight
+    Money.pln(3399)
+);
+
+// At start
+Money price1 = auction.calculate(
+    Parameters.of("time", LocalDateTime.of(2024, 6, 1, 0, 0))
+);
+// Returns: PLN 1999.00
+
+// Midday on day 1 (12 hours elapsed)
+Money price2 = auction.calculate(
+    Parameters.of("time", LocalDateTime.of(2024, 6, 1, 12, 0))
+);
+// Returns: PLN 2049.00 (interpolated)
+
+// At end
+Money price3 = auction.calculate(
+    Parameters.of("time", LocalDateTime.of(2024, 6, 15, 0, 0))
+);
+// Returns: PLN 3399.00
+```
+
+### Formula
+
+```
+f(t) = startPrice + progress × (endPrice - startPrice)
+where progress = (t - startTime) / (endTime - startTime)
+```
+
+### Use Cases
+
+- Auction pricing
+- Dynamic pricing over time
+- Precise time-based rates
+- Continuous escalation
+
+---
+
+## PercentageCalculator
+
+Calculates a percentage of a base amount.
+
+### Constructor
+
+```java
+PercentageCalculator(String name, BigDecimal percentageRate)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="percentageRate" type="BigDecimal" required>
+  Percentage rate (e.g., 10 for 10%)
+</ParamField>
+
+### Required Parameters
+
+<ResponseField name="baseAmount" type="Money" required>
+  Base amount to calculate percentage of
+</ResponseField>
+
+### Example
+
+```java
+// 10% service fee
+Calculator serviceFee = new PercentageCalculator(
+    "Service Fee",
+    BigDecimal.valueOf(10)
+);
+
+Money fee = serviceFee.calculate(
+    Parameters.of("baseAmount", Money.pln(1000))
+);
+// Returns: PLN 100.00 (1000 × 10%)
+```
+
+### Formula
+
+```
+f(baseAmount) = baseAmount × (percentageRate / 100)
+```
+
+### Use Cases
+
+- Service fees
+- Taxes
+- Commission rates
+- Discounts
+
+---
+
+## CompositeFunctionCalculator
+
+Delegates to different calculators based on parameter ranges (piecewise function).
+
+### Constructor
+
+```java
+CompositeFunctionCalculator(
+    String name,
+    Ranges ranges,
+    CalculatorRepository repository
+)
+```
+
+<ParamField path="name" type="String" required>
+  Name of the calculator
+</ParamField>
+
+<ParamField path="ranges" type="Ranges" required>
+  Range definitions mapping parameter values to calculator IDs
+</ParamField>
+
+<ParamField path="repository" type="CalculatorRepository" required>
+  Repository containing the component calculators
+</ParamField>
+
+### Validation
+
+<Warning>
+  All component calculators must have the **same interpretation** (TOTAL, UNIT, or MARGINAL).
+  Constructor will throw `IllegalArgumentException` if interpretations differ.
+</Warning>
+
+### Example - Numeric Ranges
+
+```java
+// Small orders: fixed price
+Calculator smallCalc = new SimpleFixedCalculator(
+    "Small Order",
+    Money.pln(50)
+);
+
+// Large orders: volume pricing
+Calculator largeCalc = new StepFunctionCalculator(
+    "Large Order",
+    Money.pln(100),
+    BigDecimal.valueOf(10),
+    BigDecimal.valueOf(5)
+);
+
+// Save to repository
+CalculatorRepository repo = new InMemoryCalculatorRepository();
+repo.save(smallCalc);
+repo.save(largeCalc);
+
+// Define ranges
+Ranges quantityRanges = Ranges.numeric(
+    "quantity",
+    List.of(
+        NumericRange.of(0, 10, smallCalc.getId()),      // [0, 10)
+        NumericRange.of(10, 1000, largeCalc.getId())    // [10, 1000)
+    )
+);
+
+// Create composite
+Calculator composite = new CompositeFunctionCalculator(
+    "Order Pricing",
+    quantityRanges,
+    repo
+);
+
+// Quantity 5 uses smallCalc
+Money price1 = composite.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(5))
+);
+// Returns: PLN 50.00
+
+// Quantity 15 uses largeCalc
+Money price2 = composite.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 105.00
+```
+
+### Example - Time Ranges
+
+```java
+// Day rate: 8:00-18:00
+Calculator dayRate = new SimpleFixedCalculator(
+    "Day Rate",
+    Money.pln(100)
+);
+
+// Night rate: 18:00-8:00
+Calculator nightRate = new SimpleFixedCalculator(
+    "Night Rate",
+    Money.pln(150)
+);
+
+CalculatorRepository repo = new InMemoryCalculatorRepository();
+repo.save(dayRate);
+repo.save(nightRate);
+
+Ranges timeRanges = Ranges.time(
+    "time",
+    List.of(
+        TimeRange.of(LocalTime.of(8, 0), LocalTime.of(18, 0), dayRate.getId()),
+        TimeRange.of(LocalTime.of(18, 0), LocalTime.of(8, 0), nightRate.getId())
+    )
+);
+
+Calculator composite = new CompositeFunctionCalculator(
+    "Time-based Pricing",
+    timeRanges,
+    repo
+);
+```
+
+### Use Cases
+
+- Volume tiers (different calculators for different quantity ranges)
+- Time-of-day pricing (different rates for day/night)
+- Seasonal pricing (different calculators per season)
+- Geographic pricing (different rates per region)
+- Multi-dimensional pricing strategies
+
+---
+
+## Price Adapters
+
+Adapters convert between different price interpretations (TOTAL ↔ UNIT ↔ MARGINAL).
+
+### Available Adapters
+
+<CardGroup cols={2}>
+  <Card title="UnitToTotalAdapter" icon="arrow-right">
+    `Total = UnitPrice × quantity`
+  </Card>
+  <Card title="UnitToMarginalAdapter" icon="arrow-right">
+    `Marginal(n) = Total(n) - Total(n-1)`
+  </Card>
+  <Card title="TotalToUnitAdapter" icon="arrow-right">
+    `UnitPrice = Total / quantity`
+  </Card>
+  <Card title="TotalToMarginalAdapter" icon="arrow-right">
+    `Marginal(n) = Total(n) - Total(n-1)`
+  </Card>
+  <Card title="MarginalToTotalAdapter" icon="arrow-right">
+    `Total(q) = Σ[i=1→q] Marginal(i)`
+  </Card>
+  <Card title="MarginalToUnitAdapter" icon="arrow-right">
+    `UnitPrice = (Σ Marginal(i)) / quantity`
+  </Card>
+</CardGroup>
+
+### Example - Unit to Total
+
+```java
+// Unit price calculator
+Calculator unitPrice = new SimpleFixedCalculator(
+    "Unit Price",
+    Money.pln(10),
+    Interpretation.UNIT
+);
+
+// Wrap to convert to total price
+Calculator totalPrice = UnitToTotalAdapter.wrap(
+    "Total Price",
+    unitPrice
+);
+
+Money total = totalPrice.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(5))
+);
+// Returns: PLN 50.00 (10 × 5)
+```
+
+### Example - Total to Marginal
+
+```java
+// Step function returns total price
+Calculator totalCalc = new StepFunctionCalculator(
+    "Volume Pricing",
+    Money.pln(100),
+    BigDecimal.valueOf(10),
+    BigDecimal.valueOf(5),
+    Interpretation.TOTAL
+);
+
+// Wrap to get marginal price
+Calculator marginalCalc = TotalToMarginalAdapter.wrap(
+    "Marginal Price",
+    totalCalc
+);
+
+// What does the 15th unit cost?
+Money marginal15 = marginalCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 5.00 (Total(15) - Total(14) = 105 - 100)
+```
+
+## Related Types
+
+- [Calculator Types](/api/pricing/calculator-types) - Type system and metadata
+- [Parameters](/api/pricing/parameters) - Input parameter handling
+- [Interpretation](/api/pricing/interpretation) - Price interpretation semantics

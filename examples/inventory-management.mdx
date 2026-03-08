@@ -1,0 +1,585 @@
+---
+title: 'Inventory Management'
+description: 'Track products, instances, and availability with the Inventory module'
+---
+
+The Inventory module provides comprehensive product tracking with three strategies: individually tracked (serial numbers), batch tracked (lot numbers), and identical (fungible) items. It integrates with the Availability module for reservation management.
+
+## Prerequisites
+
+```xml
+<dependency>
+    <groupId>com.softwarearchetypes</groupId>
+    <artifactId>inventory</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+## Core Concepts
+
+### Tracking Strategies
+
+- **Individually Tracked** - Each item is unique (e.g., laptops with serial numbers)
+- **Batch Tracked** - Items grouped by production batch (e.g., pharmaceuticals)
+- **Identical** - Fungible items without individual identity (e.g., gasoline)
+
+### Key Entities
+
+- **Inventory Entry** - Represents a product in the catalog
+- **Instance** - A specific occurrence of a product (e.g., one laptop with SN-12345)
+- **Resource** - Availability-tracked entity that can be locked/reserved
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Setup Inventory Configuration
+
+```java
+import com.softwarearchetypes.inventory.*;
+import com.softwarearchetypes.inventory.availability.*;
+import java.time.*;
+
+Clock clock = Clock.systemDefaultZone();
+AvailabilityConfiguration availabilityConfig = 
+    AvailabilityConfiguration.inMemory(clock);
+InventoryConfiguration config = 
+    InventoryConfiguration.inMemory(availabilityConfig);
+InventoryFacade facade = config.facade();
+```
+
+### Create Inventory Entry for Individually Tracked Products
+
+For products with serial numbers (laptops, phones, etc.):
+
+```java
+import com.softwarearchetypes.common.Result;
+
+ProductIdentifier laptopProductId = ProductIdentifier.random();
+
+InventoryProduct laptop = InventoryProduct.individuallyTracked(
+    laptopProductId,
+    "MacBook Pro 16"
+);
+
+Result<String, InventoryEntryId> result = facade.handle(
+    CreateInventoryEntry.forProduct(laptop)
+);
+
+if (result.success()) {
+    InventoryEntryId entryId = result.getSuccess();
+    System.out.println("Inventory entry created: " + entryId);
+    
+    // Verify creation
+    Optional<InventoryEntryView> view = facade.findEntry(entryId);
+    view.ifPresent(entry -> {
+        System.out.println("Product: " + entry.productName());
+        System.out.println("Tracking: individually tracked");
+        System.out.println("Instances: " + entry.instanceIds().size());
+    });
+}
+```
+
+### Add Instances with Serial Numbers
+
+Create individual items:
+
+```java
+// Add first laptop
+CreateInstance command1 = CreateInstance.forProduct(laptopProductId)
+    .withSerial("SN-LAPTOP-001")
+    .withFeatures(Map.of(
+        "color", "space-gray",
+        "ram", "32GB",
+        "storage", "1TB"
+    ))
+    .build();
+
+Result<String, InstanceId> instance1Result = facade.createInstance(command1);
+InstanceId instance1 = instance1Result.getSuccess();
+
+// Add second laptop
+CreateInstance command2 = CreateInstance.forProduct(laptopProductId)
+    .withSerial("SN-LAPTOP-002")
+    .withFeatures(Map.of(
+        "color", "silver",
+        "ram", "16GB",
+        "storage", "512GB"
+    ))
+    .build();
+
+InstanceId instance2 = facade.createInstance(command2).getSuccess();
+
+System.out.println("Added 2 laptop instances");
+```
+
+### Create Batch-Tracked Products
+
+For products tracked by production batch:
+
+```java
+import com.softwarearchetypes.quantity.*;
+
+ProductIdentifier fuelProductId = ProductIdentifier.random();
+
+InventoryProduct fuel = InventoryProduct.batchTracked(
+    fuelProductId,
+    "Gasoline 95"
+);
+
+InventoryEntryId fuelEntryId = facade.handle(
+    CreateInventoryEntry.forProduct(fuel)
+).getSuccess();
+
+// Add batch deliveries
+BatchId batch1 = BatchId.random();
+CreateInstance delivery1 = CreateInstance.forProduct(fuelProductId)
+    .withBatch(batch1)
+    .withQuantity(Quantity.of(5000, Unit.liters()))
+    .build();
+
+facade.createInstance(delivery1);
+
+BatchId batch2 = BatchId.random();
+CreateInstance delivery2 = CreateInstance.forProduct(fuelProductId)
+    .withBatch(batch2)
+    .withQuantity(Quantity.of(3000, Unit.liters()))
+    .build();
+
+facade.createInstance(delivery2);
+
+System.out.println("Added 2 fuel batches");
+System.out.println("Total fuel: " + facade.countProduct(fuelProductId));
+```
+
+### Create Identical (Fungible) Products
+
+For completely interchangeable items:
+
+```java
+ProductIdentifier milkProductId = ProductIdentifier.random();
+
+InventoryProduct milk = InventoryProduct.identical(
+    milkProductId,
+    "Whole Milk 1L"
+);
+
+InventoryEntryId milkEntryId = facade.handle(
+    CreateInventoryEntry.forProduct(milk)
+).getSuccess();
+
+// Add milk inventory
+CreateInstance milkDelivery = CreateInstance.forProduct(milkProductId)
+    .withQuantity(Quantity.of(100, Unit.pieces()))
+    .build();
+
+facade.createInstance(milkDelivery);
+
+System.out.println("Milk inventory: " + 
+    facade.countProduct(milkProductId));
+```
+
+### Query Instances
+
+Find instances by various criteria:
+
+```java
+// Find instance by serial number
+Optional<InstanceView> found = facade.findInstanceBySerial(
+    SerialNumber.of("SN-LAPTOP-001")
+);
+
+found.ifPresent(instance -> {
+    System.out.println("Found laptop: " + instance.serialNumber());
+    System.out.println("Features: " + instance.features());
+});
+
+// Find all instances of a product
+List<InstanceView> allLaptops = facade.findInstancesByProduct(laptopProductId);
+System.out.println("Total laptops: " + allLaptops.size());
+
+// Find instances by batch
+List<InstanceView> batch1Fuel = facade.findInstancesByBatch(batch1);
+System.out.println("Batch 1 fuel deliveries: " + batch1Fuel.size());
+```
+
+### Count Products with Criteria
+
+Get inventory quantities:
+
+```java
+// Count all instances of a product
+Quantity totalLaptops = facade.countProduct(laptopProductId);
+System.out.println("Total laptops: " + totalLaptops.amount() + " " + 
+    totalLaptops.unit());
+
+// Count specific batch
+Quantity batch1Quantity = facade.countProduct(
+    fuelProductId,
+    InstanceCriteria.byBatch(batch1)
+);
+System.out.println("Batch 1 fuel: " + batch1Quantity);
+
+// Count with feature criteria
+Set<InstanceId> silverLaptops = facade.findInstances(
+    laptopProductId,
+    InstanceCriteria.byFeature("color", "silver")
+);
+System.out.println("Silver laptops: " + silverLaptops.size());
+```
+
+### Map Instances to Availability Resources
+
+Connect inventory to the availability system:
+
+```java
+import com.softwarearchetypes.inventory.availability.*;
+
+// Create availability resource for laptop 1
+ResourceId resource1 = ResourceId.random();
+AvailabilityFacade availabilityFacade = availabilityConfig.facade();
+availabilityFacade.registerIndividualResource(resource1);
+
+// Map instance to resource
+facade.mapInstanceToResource(
+    entryId,
+    instance1,
+    resource1
+);
+
+System.out.println("Instance mapped to availability resource");
+
+// Verify mapping
+Optional<InventoryEntryView> entry = facade.findEntry(entryId);
+entry.ifPresent(e -> {
+    Map<InstanceId, ResourceId> mappings = e.instanceToResource();
+    System.out.println("Mapped instances: " + mappings.size());
+});
+```
+
+### Lock Resources (Reserve Inventory)
+
+Reserve inventory for orders:
+
+```java
+OwnerId customerId = OwnerId.random();
+
+// Lock the laptop for customer
+LockCommand lockCmd = new LockCommand(
+    laptopProductId,
+    Quantity.of(1, Unit.pieces()),
+    customerId,
+    ResourceSpecification.IndividualSpecification.of(instance1)
+);
+
+Result<String, List<BlockadeId>> lockResult = facade.handle(lockCmd);
+
+if (lockResult.success()) {
+    List<BlockadeId> blockades = lockResult.getSuccess();
+    System.out.println("Laptop reserved for customer");
+    System.out.println("Blockade IDs: " + blockades);
+} else {
+    System.err.println("Reservation failed: " + lockResult.getFailure());
+}
+```
+
+### Remove Instances
+
+Remove sold or damaged items:
+
+```java
+Result<String, InventoryEntryId> removeResult = 
+    facade.removeInstanceFromEntry(entryId, instance2);
+
+if (removeResult.success()) {
+    System.out.println("Instance removed from inventory");
+    
+    // Count remaining
+    Quantity remaining = facade.countProduct(laptopProductId);
+    System.out.println("Remaining laptops: " + remaining.amount());
+}
+```
+
+</Steps>
+
+## Advanced: Temporal Resource Locking
+
+For time-slotted resources like hotel rooms:
+
+```java
+import java.time.LocalDate;
+
+// Create hotel room inventory
+ProductIdentifier roomProductId = ProductIdentifier.random();
+InventoryProduct room = InventoryProduct.individuallyTracked(
+    roomProductId,
+    "Deluxe Room 205"
+);
+
+InventoryEntryId roomEntryId = facade.handle(
+    CreateInventoryEntry.forProduct(room)
+).getSuccess();
+
+// Create room instance
+InstanceId roomInstance = facade.createInstance(
+    CreateInstance.forProduct(roomProductId)
+        .withSerial("ROOM-205")
+        .withFeatures(Map.of(
+            "floor", "2",
+            "view", "ocean",
+            "beds", "king"
+        ))
+        .build()
+).getSuccess();
+
+// Map to temporal resource
+ResourceId roomResource = ResourceId.random();
+LocalDate checkIn = LocalDate.of(2024, 6, 15);
+TimeSlot night1 = TimeSlot.ofDay(checkIn);
+TimeSlot night2 = TimeSlot.ofDay(checkIn.plusDays(1));
+TimeSlot night3 = TimeSlot.ofDay(checkIn.plusDays(2));
+
+availabilityFacade.registerTemporalResourceSlot(roomResource, night1);
+availabilityFacade.registerTemporalResourceSlot(roomResource, night2);
+availabilityFacade.registerTemporalResourceSlot(roomResource, night3);
+
+facade.mapInstanceToResource(roomEntryId, roomInstance, roomResource);
+
+// Book room for 3 nights
+OwnerId guestId = OwnerId.random();
+LockCommand bookingCmd = new LockCommand(
+    roomProductId,
+    Quantity.of(1, Unit.pieces()),
+    guestId,
+    ResourceSpecification.TemporalSpecification.of(
+        List.of(night1, night2, night3)
+    )
+);
+
+Result<String, List<BlockadeId>> bookingResult = facade.handle(bookingCmd);
+
+if (bookingResult.success()) {
+    System.out.println("Room booked for 3 nights");
+    System.out.println("Blockades: " + bookingResult.getSuccess().size());
+}
+```
+
+## Complete Example
+
+<CodeGroup>
+
+```java Inventory Example
+import com.softwarearchetypes.inventory.*;
+import com.softwarearchetypes.inventory.availability.*;
+import com.softwarearchetypes.quantity.*;
+import com.softwarearchetypes.common.Result;
+import java.time.Clock;
+import java.util.*;
+
+public class InventoryExample {
+    public static void main(String[] args) {
+        // Setup
+        Clock clock = Clock.systemDefaultZone();
+        AvailabilityConfiguration availConfig = 
+            AvailabilityConfiguration.inMemory(clock);
+        InventoryConfiguration config = 
+            InventoryConfiguration.inMemory(availConfig);
+        InventoryFacade facade = config.facade();
+        AvailabilityFacade availFacade = availConfig.facade();
+        
+        System.out.println("=== Warehouse Inventory System ===");
+        
+        // 1. Setup product catalog
+        System.out.println("\n1. Creating product catalog...");
+        
+        ProductIdentifier laptopId = ProductIdentifier.random();
+        InventoryProduct laptop = InventoryProduct.individuallyTracked(
+            laptopId, "ThinkPad X1 Carbon"
+        );
+        InventoryEntryId laptopEntry = facade.handle(
+            CreateInventoryEntry.forProduct(laptop)
+        ).getSuccess();
+        
+        ProductIdentifier fuelId = ProductIdentifier.random();
+        InventoryProduct fuel = InventoryProduct.of(
+            fuelId,
+            "Diesel Fuel",
+            ProductTrackingStrategy.BATCH_TRACKED,
+            Unit.liters()
+        );
+        InventoryEntryId fuelEntry = facade.handle(
+            CreateInventoryEntry.forProduct(fuel)
+        ).getSuccess();
+        
+        System.out.println("✓ Created 2 products");
+        
+        // 2. Receive inventory
+        System.out.println("\n2. Receiving inventory...");
+        
+        // Receive 5 laptops
+        for (int i = 1; i <= 5; i++) {
+            InstanceId instance = facade.createInstance(
+                CreateInstance.forProduct(laptopId)
+                    .withSerial("SN-X1-" + String.format("%03d", i))
+                    .withFeatures(Map.of(
+                        "ram", "16GB",
+                        "storage", "512GB SSD"
+                    ))
+                    .build()
+            ).getSuccess();
+            
+            // Map to availability resource
+            ResourceId resource = ResourceId.random();
+            availFacade.registerIndividualResource(resource);
+            facade.mapInstanceToResource(laptopEntry, instance, resource);
+        }
+        
+        // Receive fuel batch
+        BatchId batch = BatchId.random();
+        facade.createInstance(
+            CreateInstance.forProduct(fuelId)
+                .withBatch(batch)
+                .withQuantity(Quantity.of(10000, Unit.liters()))
+                .build()
+        );
+        
+        System.out.println("✓ Received 5 laptops");
+        System.out.println("✓ Received 10,000L fuel (batch: " + 
+            batch.toString().substring(0, 8) + "...)");
+        
+        // 3. Check stock levels
+        System.out.println("\n3. Current stock levels:");
+        System.out.println("  Laptops: " + facade.countProduct(laptopId));
+        System.out.println("  Fuel: " + facade.countProduct(fuelId));
+        
+        // 4. Reserve inventory
+        System.out.println("\n4. Processing customer order...");
+        
+        OwnerId customer = OwnerId.random();
+        
+        // Find available laptop
+        List<InstanceView> availableLaptops = 
+            facade.findInstancesByProduct(laptopId);
+        InstanceId laptopToReserve = availableLaptops.get(0).id();
+        
+        Result<String, List<BlockadeId>> reservation = facade.handle(
+            new LockCommand(
+                laptopId,
+                Quantity.of(1, Unit.pieces()),
+                customer,
+                ResourceSpecification.IndividualSpecification.of(laptopToReserve)
+            )
+        );
+        
+        if (reservation.success()) {
+            System.out.println("✓ Reserved 1 laptop for customer");
+        }
+        
+        // 5. Summary
+        System.out.println("\n=== Inventory Summary ===");
+        System.out.println("Total entries: " + 
+            facade.findAllEntries().size());
+        System.out.println("Laptop stock: " + 
+            facade.countProduct(laptopId));
+        System.out.println("Fuel stock: " + 
+            facade.countProduct(fuelId));
+    }
+}
+```
+
+</CodeGroup>
+
+## Common Patterns
+
+### Pattern: Find Available Instances
+
+```java
+public List<InstanceView> findAvailableInstances(
+    ProductIdentifier productId,
+    OwnerId requestor
+) {
+    return facade.findInstancesByProduct(productId).stream()
+        .filter(instance -> {
+            // Check if instance has mapped resource
+            Optional<ResourceId> resource = facade.findEntry(entryId)
+                .flatMap(entry -> Optional.ofNullable(
+                    entry.instanceToResource().get(instance.id())
+                ));
+            
+            if (resource.isEmpty()) {
+                return false;
+            }
+            
+            // Check availability
+            return availabilityFacade.isAvailable(
+                resource.get(),
+                requestor
+            );
+        })
+        .collect(Collectors.toList());
+}
+```
+
+### Pattern: Bulk Instance Creation
+
+```java
+public List<InstanceId> addMultipleInstances(
+    ProductIdentifier productId,
+    int count,
+    String serialPrefix
+) {
+    List<InstanceId> instances = new ArrayList<>();
+    
+    for (int i = 1; i <= count; i++) {
+        String serial = serialPrefix + "-" + String.format("%04d", i);
+        
+        Result<String, InstanceId> result = facade.createInstance(
+            CreateInstance.forProduct(productId)
+                .withSerial(serial)
+                .build()
+        );
+        
+        if (result.success()) {
+            instances.add(result.getSuccess());
+        }
+    }
+    
+    return instances;
+}
+```
+
+### Pattern: Low Stock Alert
+
+```java
+public boolean isLowStock(ProductIdentifier productId, int threshold) {
+    Quantity current = facade.countProduct(productId);
+    return current.amount().intValue() < threshold;
+}
+
+public void checkLowStockAlerts() {
+    Map<ProductIdentifier, Integer> thresholds = Map.of(
+        laptopId, 10,
+        phoneId, 20,
+        tabletId, 15
+    );
+    
+    thresholds.forEach((productId, threshold) -> {
+        if (isLowStock(productId, threshold)) {
+            System.out.println("LOW STOCK ALERT: " + productId);
+            Quantity current = facade.countProduct(productId);
+            System.out.println("  Current: " + current);
+            System.out.println("  Threshold: " + threshold);
+        }
+    });
+}
+```
+
+## Next Steps
+
+- Learn about [Availability Strategies](/concepts/availability) for reservation logic
+- Explore [Resource Pooling](/examples/resource-pools) for fungible resources
+- See [Inventory Reporting](/examples/inventory-reports) for analytics
+
+<Note>
+  The Inventory module separates **what you have** (inventory) from **what you can promise** (availability). This enables sophisticated reservation and allocation strategies.
+</Note>

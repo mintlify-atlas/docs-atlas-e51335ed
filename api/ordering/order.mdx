@@ -1,0 +1,374 @@
+---
+title: Order
+description: Core ordering domain model for managing customer orders with lifecycle operations
+---
+
+## Overview
+
+The `Order` class represents the central aggregate in the ordering module. It manages order lines, parties, pricing, and orchestrates interactions with fulfillment, inventory, and payment services through the order lifecycle.
+
+## Class Definition
+
+```java
+package com.softwarearchetypes.ordering;
+
+class Order {
+    private final OrderId id;
+    private OrderStatus status;
+    private final List<OrderLine> lines;
+    private final OrderParties parties;
+    private final List<Reservation> reservations;
+    private final OrderServices services;
+}
+```
+
+## Constructor
+
+<ParamField path="id" type="OrderId" required>
+  Unique identifier for the order
+</ParamField>
+
+<ParamField path="status" type="OrderStatus" required>
+  Current status of the order (DRAFT, CONFIRMED, PROCESSING, FULFILLED, etc.)
+</ParamField>
+
+<ParamField path="lines" type="List<OrderLine>" required>
+  Collection of order lines, each representing a product with quantity and specifications
+</ParamField>
+
+<ParamField path="parties" type="OrderParties" required>
+  Parties involved in the order (buyer, receiver, delivery contact, etc.)
+</ParamField>
+
+<ParamField path="services" type="OrderServices" required>
+  External services for pricing, inventory, payment, and fulfillment
+</ParamField>
+
+## Key Methods
+
+### id()
+
+Returns the order identifier.
+
+```java
+public OrderId id()
+```
+
+<ResponseField name="return" type="OrderId">
+  The unique order identifier
+</ResponseField>
+
+### status()
+
+Returns the current order status.
+
+```java
+public OrderStatus status()
+```
+
+<ResponseField name="return" type="OrderStatus">
+  Current status: DRAFT, CONFIRMED, PROCESSING, FULFILLED, CLOSED, or CANCELLED
+</ResponseField>
+
+### lines()
+
+Returns an immutable copy of order lines.
+
+```java
+public List<OrderLine> lines()
+```
+
+<ResponseField name="return" type="List<OrderLine>">
+  Immutable list of order lines
+</ResponseField>
+
+### addLine()
+
+Adds a new line to the order. Only allowed in DRAFT status.
+
+```java
+void addLine(OrderLine line)
+```
+
+<ParamField path="line" type="OrderLine" required>
+  The order line to add
+</ParamField>
+
+**Throws:**
+- `IllegalStateException` if order status doesn't allow adding lines
+- `IllegalArgumentException` if line is null
+
+### removeLine()
+
+Removes an order line by ID. Only allowed when status permits modifications.
+
+```java
+void removeLine(OrderLineId lineId)
+```
+
+<ParamField path="lineId" type="OrderLineId" required>
+  ID of the line to remove
+</ParamField>
+
+**Throws:**
+- `IllegalStateException` if status doesn't allow modifications or line not found
+- `IllegalStateException` if removing would leave order with no lines
+
+### changeLineQuantity()
+
+Changes the quantity of an existing order line.
+
+```java
+void changeLineQuantity(OrderLineId lineId, Quantity newQuantity)
+```
+
+<ParamField path="lineId" type="OrderLineId" required>
+  ID of the line to modify
+</ParamField>
+
+<ParamField path="newQuantity" type="Quantity" required>
+  New quantity value
+</ParamField>
+
+**Throws:**
+- `IllegalStateException` if order status doesn't allow modifications
+- `IllegalStateException` if line not found
+
+### priceLines()
+
+Calculates and applies pricing to all order lines using the configured pricing service.
+
+```java
+void priceLines()
+```
+
+For each line, creates a `PricingContext` with effective parties and delegates to `OrderServices.pricing()` to calculate the price.
+
+### confirm()
+
+Confirms the order, triggering inventory allocation, payment capture, and fulfillment initiation.
+
+```java
+void confirm()
+```
+
+**Process:**
+1. Validates order is in DRAFT status
+2. Allocates inventory for each line
+3. Authorizes and captures payment for total order amount
+4. Changes status to CONFIRMED
+5. Starts fulfillment process
+
+**Throws:**
+- `IllegalStateException` if not in DRAFT status
+- `IllegalStateException` if inventory allocation fails
+- `IllegalStateException` if payment fails
+
+### cancel()
+
+Cancels the order and cancels fulfillment if already started.
+
+```java
+void cancel()
+```
+
+**Throws:**
+- `IllegalStateException` if order status doesn't allow cancellation (CLOSED or already CANCELLED)
+
+### updateFulfillmentStatus()
+
+Updates order status based on fulfillment progress.
+
+```java
+void updateFulfillmentStatus(FulfillmentStatus fulfillmentStatus)
+```
+
+<ParamField path="fulfillmentStatus" type="FulfillmentStatus" required>
+  New fulfillment status (IN_PROGRESS, PARTIALLY_COMPLETED, COMPLETED)
+</ParamField>
+
+**Status mapping:**
+- `IN_PROGRESS` or `PARTIALLY_COMPLETED` → Order status becomes PROCESSING
+- `COMPLETED` → Order status becomes FULFILLED
+
+### getEffectivePartiesFor()
+
+Returns effective parties for a specific order line, merging line-level parties with order-level parties.
+
+```java
+OrderParties getEffectivePartiesFor(OrderLine line)
+```
+
+<ParamField path="line" type="OrderLine" required>
+  The order line to get parties for
+</ParamField>
+
+<ResponseField name="return" type="OrderParties">
+  Merged parties with line-level overrides taking precedence
+</ResponseField>
+
+### totalPrice()
+
+Calculates total order price if all lines are priced.
+
+```java
+Optional<Money> totalPrice()
+```
+
+<ResponseField name="return" type="Optional<Money>">
+  Total price summed across all lines, or empty if any line is not priced
+</ResponseField>
+
+### isFullyPriced()
+
+Checks if all order lines have pricing applied.
+
+```java
+boolean isFullyPriced()
+```
+
+<ResponseField name="return" type="boolean">
+  True if all lines are priced
+</ResponseField>
+
+## Builder Pattern
+
+Orders are constructed using a fluent builder:
+
+```java
+Order order = Order.builder(orderId, parties, services)
+    .addLine(productId, quantity)
+    .addLine(line -> line
+        .productId(anotherProductId)
+        .quantity(qty)
+        .specification(spec -> spec
+            .add("color", "blue")
+            .component("battery", "BAT-001")
+        )
+        .parties(p -> p
+            .receiver(receiverParty)
+            .deliveryContact(contactParty)
+        )
+    )
+    .build();
+```
+
+### Builder Methods
+
+<ParamField path="builder()" type="static Builder">
+  Creates a new order builder
+  
+  **Parameters:**
+  - `id` (OrderId): Order identifier
+  - `parties` (OrderParties): Order-level parties
+  - `services` (OrderServices): External services
+</ParamField>
+
+<ParamField path="addLine()" type="Builder">
+  Adds an order line using a configuration function or direct parameters
+  
+  **Overloads:**
+  - `addLine(Function<LineBuilder, LineBuilder>)` - Fluent configuration
+  - `addLine(ProductIdentifier, Quantity)` - Simple line
+  - `addLine(ProductIdentifier, Quantity, OrderLineSpecification)` - With specification
+</ParamField>
+
+<ParamField path="build()" type="Order">
+  Constructs the order in DRAFT status
+  
+  **Throws:** IllegalStateException if order has no lines
+</ParamField>
+
+## Usage Examples
+
+### Creating and Confirming an Order
+
+```java
+// Create order
+Order order = Order.builder(OrderId.generate(), parties, services)
+    .addLine(ProductIdentifier.of("LAPTOP-001"), Quantity.of(1))
+    .addLine(ProductIdentifier.of("MOUSE-001"), Quantity.of(2))
+    .build();
+
+// Price all lines
+order.priceLines();
+
+// Confirm order (allocates inventory, captures payment, starts fulfillment)
+order.confirm();
+```
+
+### Adding Line with Specifications
+
+```java
+Order order = Order.builder(orderId, parties, services)
+    .addLine(line -> line
+        .productId(ProductIdentifier.of("LAPTOP-001"))
+        .quantity(Quantity.of(1))
+        .specification(spec -> spec
+            .add("ram", "16GB")
+            .add("storage", "512GB")
+            .component("processor", "CPU-I7-12")
+            .preference("color", "silver")
+        )
+    )
+    .build();
+```
+
+### Line-Level Party Overrides
+
+```java
+Order order = Order.builder(orderId, orderParties, services)
+    .addLine(line -> line
+        .productId(giftCardProductId)
+        .quantity(Quantity.of(1))
+        .parties(p -> p
+            .receiver(giftRecipient)  // Override order-level receiver
+            .deliveryContact(recipientEmail)
+        )
+    )
+    .build();
+```
+
+### Modifying Order Lines
+
+```java
+// Change quantity
+order.changeLineQuantity(lineId, Quantity.of(5));
+
+// Remove line
+order.removeLine(lineId);
+
+// Add new line
+OrderLine newLine = new OrderLine(
+    OrderLineId.generate(),
+    productId,
+    quantity,
+    specification,
+    null  // Use order-level parties
+);
+order.addLine(newLine);
+```
+
+## Related Types
+
+- **OrderId**: Value object for order identification
+- **OrderLine**: Individual line item in the order (see `/api/ordering/order` source code at line 10)
+- **OrderStatus**: Enum defining order lifecycle states (see `/api/ordering/order` source code at line 21)
+- **OrderParties**: Collection of parties involved in order and their roles
+- **OrderServices**: Service facade for pricing, inventory, payment, and fulfillment
+- **OrderLineSpecification**: Key-value attributes for product configuration
+
+## Lifecycle State Diagram
+
+```
+DRAFT → CONFIRMED → PROCESSING → FULFILLED → CLOSED
+  ↓         ↓            ↓
+CANCELLED  CANCELLED   CANCELLED
+```
+
+- **DRAFT**: Initial state, lines can be added/modified
+- **CONFIRMED**: Order confirmed, inventory allocated, payment captured
+- **PROCESSING**: Fulfillment in progress
+- **FULFILLED**: All lines fulfilled
+- **CLOSED**: Order archived (final state)
+- **CANCELLED**: Order cancelled (terminal state)

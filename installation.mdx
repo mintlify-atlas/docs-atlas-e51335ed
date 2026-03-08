@@ -1,0 +1,424 @@
+---
+title: "Installation"
+description: "Add Archetypy Oprogramowania modules to your Java project with Maven"
+---
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+<CardGroup cols={2}>
+  <Card title="Java 21+" icon="java">
+    Archetypy Oprogramowania requires Java 21 or higher
+  </Card>
+  <Card title="Maven" icon="box">
+    The library is distributed as Maven artifacts
+  </Card>
+</CardGroup>
+
+<Note>
+  **Why Java 21?** Archetypy Oprogramowania leverages modern Java features including records, pattern matching, sealed types, and virtual threads for clean, performant code.
+</Note>
+
+## Maven Configuration
+
+Archetypy Oprogramowania is organized as a multi-module Maven project. You can include only the modules you need.
+
+### Parent POM Coordinates
+
+```xml
+<groupId>com.softwarearchetypes</groupId>
+<artifactId>archetypes</artifactId>
+<version>0.0.1</version>
+<packaging>pom</packaging>
+```
+
+## Installing Modules
+
+<Steps>
+  <Step title="Choose Your Modules">
+    Identify which modules your application needs based on your requirements.
+  </Step>
+  <Step title="Add Dependencies">
+    Add the required dependencies to your `pom.xml`.
+  </Step>
+  <Step title="Verify Installation">
+    Build your project and verify the dependencies are resolved.
+  </Step>
+</Steps>
+
+## Available Modules
+
+### Core Foundation Modules
+
+<Tabs>
+  <Tab title="Common">
+    Essential utilities and patterns used across all modules.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>common</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Includes:**
+    - `Result<F, S>` monad for error handling
+    - `Preconditions` utilities
+    - Event system base classes
+    - Version management
+  </Tab>
+
+  <Tab title="Quantity">
+    Type-safe measurements and monetary values.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>quantity</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Includes:**
+    - `Quantity` type with units
+    - `Money` type with currency support
+    - `Unit` abstraction
+    - JavaMoney (Moneta 1.4.5) integration
+
+    **Dependencies:** Automatically includes `common`
+  </Tab>
+</Tabs>
+
+### Business Domain Modules
+
+<Tabs>
+  <Tab title="Accounting">
+    Full double-entry accounting system.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>accounting</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`, `quantity`
+  </Tab>
+
+  <Tab title="Pricing">
+    Sophisticated pricing calculators and strategies.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>pricing</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`, `quantity`
+  </Tab>
+
+  <Tab title="Product">
+    Product catalog and batch management.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>product</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`, `quantity`
+  </Tab>
+
+  <Tab title="Party">
+    Organization and party management.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>party</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`
+  </Tab>
+
+  <Tab title="Inventory">
+    Comprehensive inventory tracking and availability.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>inventory</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`, `quantity`
+  </Tab>
+
+  <Tab title="Ordering">
+    Complete order processing system.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>ordering</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`, `quantity`
+  </Tab>
+</Tabs>
+
+### Advanced Modules
+
+<Tabs>
+  <Tab title="Graphs">
+    Graph algorithms and data structures.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>graphs</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`
+  </Tab>
+
+  <Tab title="Rules">
+    Rule engine, predicates, and scoring.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>rules</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`
+  </Tab>
+
+  <Tab title="Plan vs Execution">
+    Planning and execution tracking.
+
+    ```xml pom.xml
+    <dependency>
+        <groupId>com.softwarearchetypes</groupId>
+        <artifactId>planvsexecution</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    ```
+
+    **Transitive dependencies:** `common`
+  </Tab>
+</Tabs>
+
+## Complete Example POM
+
+Here's a complete example for an e-commerce application using multiple modules:
+
+```xml pom.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>my-ecommerce-app</artifactId>
+    <version>1.0.0</version>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <archetypes.version>0.0.1-SNAPSHOT</archetypes.version>
+    </properties>
+
+    <dependencies>
+        <!-- Archetypy Oprogramowania modules -->
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>ordering</artifactId>
+            <version>${archetypes.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>inventory</artifactId>
+            <version>${archetypes.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>pricing</artifactId>
+            <version>${archetypes.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>accounting</artifactId>
+            <version>${archetypes.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.12.1</version>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+## Testing Dependencies
+
+All modules include comprehensive tests using:
+
+- **JUnit Jupiter 5.10.2** - Modern testing framework
+- **AssertJ 3.25.3** - Fluent assertions
+- **Mockito 5.17.0** - Mocking framework (where needed)
+
+These are included as `test` scope dependencies automatically.
+
+## Compiler Configuration
+
+<Warning>
+  **Java 21 Required** - Ensure your Maven compiler plugin is configured for Java 21:
+
+  ```xml
+  <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-compiler-plugin</artifactId>
+      <version>3.12.1</version>
+      <configuration>
+          <source>21</source>
+          <target>21</target>
+          <encoding>UTF-8</encoding>
+      </configuration>
+  </plugin>
+  ```
+</Warning>
+
+## Verifying Installation
+
+After adding dependencies, verify your installation:
+
+<CodeGroup>
+```bash Maven
+mvn clean compile
+```
+
+```bash Test Imports
+mvn clean test-compile
+```
+</CodeGroup>
+
+You should see output indicating successful dependency resolution:
+
+```
+[INFO] --- maven-compiler-plugin:3.12.1:compile (default-compile) @ my-app ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling X source files to target/classes
+[INFO] BUILD SUCCESS
+```
+
+## Quick Verification Test
+
+Create a simple test to verify the installation:
+
+```java VerifyInstallation.java
+import com.softwarearchetypes.common.Result;
+import com.softwarearchetypes.quantity.money.Money;
+import com.softwarearchetypes.quantity.Quantity;
+import com.softwarearchetypes.quantity.Unit;
+
+public class VerifyInstallation {
+    public static void main(String[] args) {
+        // Test Result monad
+        Result<String, Integer> success = Result.success(42);
+        System.out.println("Result test: " + success.getSuccess());
+        
+        // Test Money type
+        Money price = Money.of(99.99, "USD");
+        System.out.println("Money test: " + price);
+        
+        // Test Quantity
+        Quantity qty = Quantity.of(5, Unit.pieces());
+        System.out.println("Quantity test: " + qty);
+        
+        System.out.println("✓ Installation verified successfully!");
+    }
+}
+```
+
+Run it:
+
+```bash
+mvn exec:java -Dexec.mainClass="VerifyInstallation"
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot resolve dependencies">
+    If you see dependency resolution errors:
+
+    1. Ensure you're using Java 21 or higher: `java -version`
+    2. Clear your Maven cache: `mvn dependency:purge-local-repository`
+    3. Check that the snapshot repository is accessible
+    4. Verify your `pom.xml` syntax is correct
+  </Accordion>
+
+  <Accordion title="Compilation errors">
+    If you see compilation errors:
+
+    1. Verify Java 21 is configured: Check `<maven.compiler.source>21</maven.compiler.source>`
+    2. Ensure your IDE is using Java 21 SDK
+    3. Clean and rebuild: `mvn clean compile`
+    4. Check for missing transitive dependencies
+  </Accordion>
+
+  <Accordion title="Missing classes at runtime">
+    If classes are missing at runtime:
+
+    1. Check the module has all required transitive dependencies
+    2. Verify dependency scope (should be `compile`, not `test` or `provided`)
+    3. Use `mvn dependency:tree` to inspect the dependency tree
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Tutorial" icon="rocket" href="/quickstart">
+    Build your first order processing application
+  </Card>
+  <Card title="Module Documentation" icon="book" href="/modules/common">
+    Explore detailed documentation for each module
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/common/result">
+    Browse the complete API reference
+  </Card>
+  <Card title="Examples" icon="lightbulb" href="/examples/accounting-basics">
+    Learn from practical examples and tutorials
+  </Card>
+</CardGroup>

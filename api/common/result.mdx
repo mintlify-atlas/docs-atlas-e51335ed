@@ -1,0 +1,565 @@
+---
+title: "Result"
+description: "Functional result type for handling success and failure states"
+---
+
+## Overview
+
+`Result<F, S>` is a sealed interface that represents either a successful outcome (`Success<F, S>`) or a failure (`Failure<F, S>`). It provides a functional approach to error handling without exceptions.
+
+**Package:** `com.softwarearchetypes.common`
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/Result.java:14`
+
+## Type Parameters
+
+<ParamField path="F" type="type parameter">
+  The type of the failure value
+</ParamField>
+
+<ParamField path="S" type="type parameter">
+  The type of the success value
+</ParamField>
+
+## Creating Results
+
+### success
+
+```java
+static <F, S> Result<F, S> success(S value)
+```
+
+Creates a successful Result containing the provided value.
+
+<ParamField path="value" type="S" required>
+  The success value to wrap
+</ParamField>
+
+<ResponseField name="return" type="Result<F, S>">
+  A Result in success state
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Integer> result = Result.success(42);
+assert result.success(); // true
+assert result.getSuccess() == 42;
+```
+
+### failure
+
+```java
+static <F, S> Result<F, S> failure(F value)
+```
+
+Creates a failed Result containing the provided failure value.
+
+<ParamField path="value" type="F" required>
+  The failure value to wrap
+</ParamField>
+
+<ResponseField name="return" type="Result<F, S>">
+  A Result in failure state
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Integer> result = Result.failure("Error occurred");
+assert result.failure(); // true
+assert result.getFailure().equals("Error occurred");
+```
+
+## State Checking
+
+### success
+
+```java
+default boolean success()
+```
+
+Checks if this Result is in success state.
+
+<ResponseField name="return" type="boolean">
+  `true` if success, `false` if failure
+</ResponseField>
+
+### failure
+
+```java
+default boolean failure()
+```
+
+Checks if this Result is in failure state.
+
+<ResponseField name="return" type="boolean">
+  `true` if failure, `false` if success
+</ResponseField>
+
+## Value Extraction
+
+### getSuccess
+
+```java
+default S getSuccess()
+```
+
+Extracts the success value.
+
+<ResponseField name="return" type="S">
+  The success value
+</ResponseField>
+
+**Throws:** `IllegalStateException` if called on a failure Result.
+
+### getFailure
+
+```java
+default F getFailure()
+```
+
+Extracts the failure value.
+
+<ResponseField name="return" type="F">
+  The failure value
+</ResponseField>
+
+**Throws:** `IllegalStateException` if called on a success Result.
+
+## Transformation Methods
+
+### map
+
+```java
+default <R> Result<F, R> map(Function<? super S, ? extends R> mapper)
+```
+
+Transforms the success value if present, otherwise returns the failure unchanged.
+
+<ParamField path="mapper" type="Function<? super S, ? extends R>" required>
+  Function to transform the success value. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<F, R>">
+  Result with transformed success value, or original failure
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Integer> result = Result.<String, Integer>success(10)
+    .map(val -> "Value: " + (val * 2));
+assert result.getSuccess().equals("Value: 20");
+```
+
+### mapFailure
+
+```java
+default <L> Result<L, S> mapFailure(Function<? super F, ? extends L> mapper)
+```
+
+Transforms the failure value if present, otherwise returns the success unchanged.
+
+<ParamField path="mapper" type="Function<? super F, ? extends L>" required>
+  Function to transform the failure value. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<L, S>">
+  Result with transformed failure value, or original success
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Integer> result = Result.<Integer, Integer>failure(404)
+    .mapFailure(code -> "Error " + code + ": Not Found");
+assert result.getFailure().equals("Error 404: Not Found");
+```
+
+### biMap
+
+```java
+default <L, R> Result<L, R> biMap(
+    Function<? super S, ? extends R> successMapper,
+    Function<? super F, ? extends L> failureMapper
+)
+```
+
+Transforms both success and failure values.
+
+<ParamField path="successMapper" type="Function<? super S, ? extends R>" required>
+  Function to transform the success value. Must not be null.
+</ParamField>
+
+<ParamField path="failureMapper" type="Function<? super F, ? extends L>" required>
+  Function to transform the failure value. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<L, R>">
+  Result with transformed value
+</ResponseField>
+
+**Example:**
+```java
+Result<Integer, Integer> result = Result.success(1);
+Result<String, String> mapped = result.biMap(
+    val -> String.valueOf(val * 2),
+    val -> ""
+);
+assert mapped.getSuccess().equals("2");
+```
+
+### flatMap
+
+```java
+default <R> Result<F, R> flatMap(Function<S, Result<F, R>> mapping)
+```
+
+Chains Result-producing operations. If this Result is successful, applies the mapping function. If this Result is a failure, returns the failure unchanged.
+
+<ParamField path="mapping" type="Function<S, Result<F, R>>" required>
+  Function that returns a new Result. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<F, R>">
+  Result from the mapping function, or original failure
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Integer> result = Result.<String, Integer>success(5)
+    .flatMap(val -> Result.success(val * 2));
+assert result.getSuccess() == 10;
+
+// With failure
+Result<String, Integer> failed = Result.<String, Integer>success(5)
+    .flatMap(val -> Result.failure("Validation failed"));
+assert failed.failure();
+```
+
+## Side Effects
+
+### peek
+
+```java
+default Result<F, S> peek(
+    Consumer<? super S> successConsumer,
+    Consumer<? super F> failureConsumer
+)
+```
+
+Executes a side effect based on the Result state, then returns the Result unchanged.
+
+<ParamField path="successConsumer" type="Consumer<? super S>" required>
+  Consumer to execute on success. Must not be null.
+</ParamField>
+
+<ParamField path="failureConsumer" type="Consumer<? super F>" required>
+  Consumer to execute on failure. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<F, S>">
+  This Result unchanged
+</ResponseField>
+
+### peekSuccess
+
+```java
+default Result<F, S> peekSuccess(Consumer<? super S> successConsumer)
+```
+
+Executes a side effect only if the Result is successful.
+
+<ParamField path="successConsumer" type="Consumer<? super S>" required>
+  Consumer to execute on success. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<F, S>">
+  This Result unchanged
+</ResponseField>
+
+### peekFailure
+
+```java
+default Result<F, S> peekFailure(Consumer<? super F> failureConsumer)
+```
+
+Executes a side effect only if the Result is a failure.
+
+<ParamField path="failureConsumer" type="Consumer<? super F>" required>
+  Consumer to execute on failure. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<F, S>">
+  This Result unchanged
+</ResponseField>
+
+## Folding and Combining
+
+### fold
+
+```java
+default <U> U fold(
+    Function<? super F, ? extends U> leftMapper,
+    Function<? super S, ? extends U> rightMapper
+)
+```
+
+Reduces the Result to a single value by applying one of two functions.
+
+<ParamField path="leftMapper" type="Function<? super F, ? extends U>" required>
+  Function to apply to failure value. Must not be null.
+</ParamField>
+
+<ParamField path="rightMapper" type="Function<? super S, ? extends U>" required>
+  Function to apply to success value. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="U">
+  The result of applying the appropriate mapper
+</ResponseField>
+
+**Example:**
+```java
+Integer result = Result.<String, Integer>success(10)
+    .fold(error -> -1, val -> val * 3);
+assert result == 30;
+
+Integer failureResult = Result.<String, Integer>failure("Error")
+    .fold(String::length, val -> val * 3);
+assert failureResult == 5;
+```
+
+### ifSuccessOrElse
+
+```java
+default <R> R ifSuccessOrElse(
+    Function<S, R> successMapping,
+    Function<F, R> failureMapping
+)
+```
+
+Applies one of two mapping functions based on the Result state.
+
+<ParamField path="successMapping" type="Function<S, R>" required>
+  Function to apply on success. Must not be null.
+</ParamField>
+
+<ParamField path="failureMapping" type="Function<F, R>" required>
+  Function to apply on failure. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="R">
+  The result of applying the appropriate mapping function
+</ResponseField>
+
+### combine
+
+```java
+default <FAILURE, SUCCESS> Result<FAILURE, SUCCESS> combine(
+    Result<F, S> secondResult,
+    BiFunction<F, F, FAILURE> failureCombiner,
+    BiFunction<S, S, SUCCESS> successCombiner
+)
+```
+
+Combines two Results using the appropriate combiner function.
+
+<ParamField path="secondResult" type="Result<F, S>" required>
+  The Result to combine with. Must not be null.
+</ParamField>
+
+<ParamField path="failureCombiner" type="BiFunction<F, F, FAILURE>" required>
+  Function to combine failure values. Must not be null.
+</ParamField>
+
+<ParamField path="successCombiner" type="BiFunction<S, S, SUCCESS>" required>
+  Function to combine success values. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="Result<FAILURE, SUCCESS>">
+  Combined Result
+</ResponseField>
+
+**Example:**
+```java
+Result<Integer, Integer> first = Result.success(5);
+Result<Integer, Integer> second = Result.success(10);
+
+Result<Integer, Integer> combined = first.combine(
+    second,
+    (val1, val2) -> val1 - val2,
+    Integer::sum
+);
+assert combined.getSuccess() == 15;
+```
+
+## Composite Results
+
+### composite
+
+```java
+static <F, S> CompositeResult<F, S> composite()
+```
+
+Creates an empty composite Result accumulator backed by a List. Use with `accumulate()` to progressively build up a Result containing multiple values.
+
+<ResponseField name="return" type="CompositeResult<F, S>">
+  CompositeResult with empty list
+</ResponseField>
+
+### compositeSet
+
+```java
+static <F, S> CompositeSetResult<F, S> compositeSet()
+```
+
+Creates an empty composite Result accumulator backed by a Set. Use with `accumulate()` to progressively build up a Result containing multiple unique values.
+
+<ResponseField name="return" type="CompositeSetResult<F, S>">
+  CompositeSetResult with empty set
+</ResponseField>
+
+## CompositeResult
+
+Helper class for accumulating multiple Results into a List with fail-fast semantics.
+
+### accumulate
+
+```java
+public CompositeResult<F, S> accumulate(Result<F, S> newResult)
+```
+
+Accumulates a new Result into this composite. If already failed, returns the existing failure. If new Result fails, returns new failure. If both succeed, adds the new value to the list.
+
+<ParamField path="newResult" type="Result<F, S>" required>
+  The Result to accumulate. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="CompositeResult<F, S>">
+  CompositeResult with accumulated values or failure
+</ResponseField>
+
+**Example:**
+```java
+Result<String, List<Integer>> result = Result.<String, Integer>composite()
+    .accumulate(Result.success(1))
+    .accumulate(Result.success(2))
+    .accumulate(Result.success(3))
+    .toResult();
+
+assert result.success();
+assert result.getSuccess().equals(List.of(1, 2, 3));
+
+// Fail-fast behavior
+Result<String, List<Integer>> failed = Result.<String, Integer>composite()
+    .accumulate(Result.success(1))
+    .accumulate(Result.failure("Error occurred"))
+    .accumulate(Result.success(3))
+    .toResult();
+
+assert failed.failure();
+assert failed.getFailure().equals("Error occurred");
+```
+
+### success
+
+```java
+public boolean success()
+```
+
+Checks if this composite is in success state.
+
+<ResponseField name="return" type="boolean">
+  `true` if success, `false` if failure
+</ResponseField>
+
+### failure
+
+```java
+public boolean failure()
+```
+
+Checks if this composite is in failure state.
+
+<ResponseField name="return" type="boolean">
+  `true` if failure, `false` if success
+</ResponseField>
+
+### toResult
+
+```java
+public Result<F, List<S>> toResult()
+```
+
+Extracts the final Result.
+
+<ResponseField name="return" type="Result<F, List<S>>">
+  Result containing either a list of all successes or the first failure
+</ResponseField>
+
+## CompositeSetResult
+
+Helper class for accumulating multiple Results into a Set with fail-fast semantics. Automatically removes duplicates.
+
+### accumulate
+
+```java
+public CompositeSetResult<F, S> accumulate(Result<F, S> newResult)
+```
+
+Accumulates a new Result into this composite. If already failed, returns the existing failure. If new Result fails, returns new failure. If both succeed, adds the new value to the set.
+
+<ParamField path="newResult" type="Result<F, S>" required>
+  The Result to accumulate. Must not be null.
+</ParamField>
+
+<ResponseField name="return" type="CompositeSetResult<F, S>">
+  CompositeSetResult with accumulated values or failure
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Set<Integer>> result = Result.<String, Integer>compositeSet()
+    .accumulate(Result.success(1))
+    .accumulate(Result.success(2))
+    .accumulate(Result.success(1)) // Duplicate removed
+    .accumulate(Result.success(3))
+    .toResult();
+
+assert result.success();
+assert result.getSuccess().equals(Set.of(1, 2, 3));
+```
+
+### success
+
+```java
+public boolean success()
+```
+
+Checks if this composite is in success state.
+
+<ResponseField name="return" type="boolean">
+  `true` if success, `false` if failure
+</ResponseField>
+
+### failure
+
+```java
+public boolean failure()
+```
+
+Checks if this composite is in failure state.
+
+<ResponseField name="return" type="boolean">
+  `true` if failure, `false` if success
+</ResponseField>
+
+### toResult
+
+```java
+public Result<F, Set<S>> toResult()
+```
+
+Extracts the final Result.
+
+<ResponseField name="return" type="Result<F, Set<S>>">
+  Result containing either a set of all successes or the first failure
+</ResponseField>

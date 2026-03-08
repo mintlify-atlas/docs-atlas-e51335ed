@@ -1,0 +1,656 @@
+---
+title: 'Order Processing'
+description: 'Build an e-commerce order system with party management and lifecycle automation'
+---
+
+The Ordering module provides a complete order processing system with party role management, multi-line orders, and automated lifecycle workflows.
+
+## Prerequisites
+
+```xml
+<dependency>
+    <groupId>com.softwarearchetypes</groupId>
+    <artifactId>ordering</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+## Core Concepts
+
+### Order Parties
+
+Parties represent entities involved in an order with specific roles:
+- **ORDERER** - Entity placing the order
+- **PAYER** - Entity paying for the order
+- **RECEIVER** - Entity receiving the goods
+- **EXECUTOR** - Entity fulfilling the order
+
+Roles can be assigned at:
+- **Order level** - Applies to all lines
+- **Line level** - Specific to individual order lines
+
+### Order Lifecycle
+
+```
+DRAFT → CONFIRMED → PROCESSING → FULFILLED
+              ↓
+           CANCELLED
+```
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Setup Order Configuration
+
+```java
+import com.softwarearchetypes.ordering.*;
+import com.softwarearchetypes.ordering.commands.*;
+
+OrderingConfiguration config = OrderingConfiguration.inMemory();
+OrderingFacade facade = config.orderingFacade();
+OrderingQueries queries = config.orderingQueries();
+```
+
+### Create a Simple Order
+
+Create an order with a single party and one line:
+
+```java
+import java.util.*;
+
+OrderView order = facade.handle(new CreateOrderCommand(
+    // Parties involved
+    List.of(
+        new CreateOrderCommand.OrderPartyData(
+            "customer-123",
+            "Jan Kowalski",
+            "jan@example.com",
+            Set.of("ORDERER", "PAYER", "RECEIVER")
+        ),
+        new CreateOrderCommand.OrderPartyData(
+            "shop-001",
+            "TechShop",
+            "sales@techshop.com",
+            Set.of("EXECUTOR")
+        )
+    ),
+    // Order lines
+    List.of(
+        new CreateOrderCommand.OrderLineData(
+            "LAPTOP-DELL-XPS-15",
+            1,
+            "pieces",
+            Map.of(
+                "color", "silver",
+                "ram", "32GB",
+                "storage", "1TB SSD"
+            ),
+            null  // No line-level parties
+        )
+    )
+)).getSuccess();
+
+System.out.println("Order created: " + order.id());
+System.out.println("Status: " + order.status());  // DRAFT
+System.out.println("Lines: " + order.lines().size());  // 1
+```
+
+<Note>
+  Orders start in `DRAFT` status. You can modify them freely until confirmation.
+</Note>
+
+### Add Lines to Order
+
+Customers can add more items:
+
+```java
+OrderView updated = facade.handle(new AddOrderLineCommand(
+    order.id(),
+    "MOUSE-LOGITECH-MX3",
+    1,
+    "pieces",
+    Map.of("color", "black")
+)).getSuccess();
+
+System.out.println("Lines after add: " + updated.lines().size());  // 2
+
+// Add a second mouse
+updated = facade.handle(new AddOrderLineCommand(
+    order.id(),
+    "USB-C-CABLE-2M",
+    2,
+    "pieces",
+    Map.of("type", "thunderbolt")
+)).getSuccess();
+
+System.out.println("Lines after second add: " + updated.lines().size());  // 3
+```
+
+### Modify Order Line Quantity
+
+Change quantities before confirmation:
+
+```java
+// Get the line ID for the mouse
+OrderLineId mouseLineId = updated.lines().stream()
+    .filter(line -> line.productId().equals("MOUSE-LOGITECH-MX3"))
+    .findFirst()
+    .map(OrderLineView::id)
+    .orElseThrow();
+
+// Change quantity from 1 to 3
+OrderView modified = facade.handle(new ChangeOrderLineQuantityCommand(
+    order.id(),
+    mouseLineId,
+    3,
+    "pieces"
+)).getSuccess();
+
+OrderLineView mouseLine = modified.lines().stream()
+    .filter(line -> line.id().equals(mouseLineId))
+    .findFirst()
+    .orElseThrow();
+
+System.out.println("Mouse quantity: " + mouseLine.quantity());  // 3 pieces
+```
+
+### Remove Order Line
+
+Remove items before confirmation:
+
+```java
+// Remove the USB cable
+OrderLineId cableLineId = modified.lines().stream()
+    .filter(line -> line.productId().equals("USB-C-CABLE-2M"))
+    .findFirst()
+    .map(OrderLineView::id)
+    .orElseThrow();
+
+OrderView afterRemoval = facade.handle(new RemoveOrderLineCommand(
+    order.id(),
+    cableLineId
+)).getSuccess();
+
+System.out.println("Lines after removal: " + afterRemoval.lines().size());  // 2
+```
+
+### Confirm Order
+
+Confirm the order to trigger inventory allocation and payment:
+
+```java
+import com.softwarearchetypes.common.Result;
+
+Result<String, OrderView> confirmResult = facade.handle(
+    new ConfirmOrderCommand(order.id())
+);
+
+if (confirmResult.success()) {
+    OrderView confirmed = confirmResult.getSuccess();
+    System.out.println("Order confirmed: " + confirmed.id());
+    System.out.println("Status: " + confirmed.status());  // CONFIRMED
+    
+    // Check side effects
+    InventoryService inventory = config.inventoryService();
+    System.out.println("Inventory allocations: " + 
+        inventory.allocateRequests().size());  // 2 (laptop + mouse)
+    
+    PaymentService payment = config.paymentService();
+    System.out.println("Payment authorizations: " + 
+        payment.authorizeRequests().size());  // 1
+    
+    FulfillmentService fulfillment = config.fulfillmentService();
+    System.out.println("Fulfillment started: " + 
+        fulfillment.startedOrders().size());  // 1
+} else {
+    System.err.println("Confirmation failed: " + confirmResult.getFailure());
+}
+```
+
+<Warning>
+  After confirmation, you cannot modify the order. Confirmation is irreversible in this example.
+</Warning>
+
+### Track Fulfillment Progress
+
+Update order status based on fulfillment events:
+
+```java
+import java.time.LocalDateTime;
+
+// Fulfillment in progress
+facade.handle(new FulfillmentUpdated(
+    order.id(),
+    FulfillmentStatus.IN_PROGRESS,
+    "Items picked and packed",
+    LocalDateTime.now()
+));
+
+OrderView processing = queries.findById(order.id()).orElseThrow();
+System.out.println("Status: " + processing.status());  // PROCESSING
+
+// Fulfillment completed
+facade.handle(new FulfillmentUpdated(
+    order.id(),
+    FulfillmentStatus.COMPLETED,
+    "Delivered to customer",
+    LocalDateTime.now()
+));
+
+OrderView fulfilled = queries.findById(order.id()).orElseThrow();
+System.out.println("Status: " + fulfilled.status());  // FULFILLED
+```
+
+### Cancel Order
+
+Cancel orders in DRAFT or CONFIRMED status:
+
+```java
+// Create a new order to cancel
+OrderView orderToCancel = facade.handle(new CreateOrderCommand(
+    List.of(
+        new CreateOrderCommand.OrderPartyData(
+            "customer-456",
+            "Maria Nowak",
+            "maria@example.com",
+            Set.of("ORDERER", "PAYER", "RECEIVER")
+        )
+    ),
+    List.of(
+        new CreateOrderCommand.OrderLineData(
+            "PHONE-SAMSUNG-S24",
+            1,
+            "pieces",
+            Map.of("color", "black"),
+            null
+        )
+    )
+)).getSuccess();
+
+// Cancel it
+Result<String, OrderView> cancelResult = facade.handle(
+    new CancelOrderCommand(
+        orderToCancel.id(),
+        "Customer changed mind"
+    )
+);
+
+if (cancelResult.success()) {
+    OrderView cancelled = cancelResult.getSuccess();
+    System.out.println("Order cancelled: " + cancelled.status());  // CANCELLED
+}
+```
+
+</Steps>
+
+## Advanced: Line-Level Parties
+
+For B2B scenarios, different lines can have different parties:
+
+```java
+// Corporate order: Different departments as receivers
+OrderView corporateOrder = facade.handle(new CreateOrderCommand(
+    List.of(
+        new CreateOrderCommand.OrderPartyData(
+            "corp-acme",
+            "ACME Corporation",
+            "procurement@acme.com",
+            Set.of("ORDERER", "PAYER")
+        ),
+        new CreateOrderCommand.OrderPartyData(
+            "dept-it",
+            "IT Department",
+            "it@acme.com",
+            Set.of()  // Will be assigned per line
+        ),
+        new CreateOrderCommand.OrderPartyData(
+            "dept-hr",
+            "HR Department",
+            "hr@acme.com",
+            Set.of()  // Will be assigned per line
+        ),
+        new CreateOrderCommand.OrderPartyData(
+            "supplier-tech",
+            "Tech Supplier Inc",
+            "sales@techsupplier.com",
+            Set.of("EXECUTOR")
+        )
+    ),
+    List.of(
+        // Laptops for IT Department
+        new CreateOrderCommand.OrderLineData(
+            "LAPTOP-DELL-XPS-15",
+            10,
+            "pieces",
+            Map.of("config", "developer"),
+            List.of(
+                new CreateOrderCommand.LinePartyData(
+                    "dept-it",
+                    Set.of("RECEIVER")
+                )
+            )
+        ),
+        // Office chairs for HR Department
+        new CreateOrderCommand.OrderLineData(
+            "CHAIR-HERMAN-MILLER",
+            5,
+            "pieces",
+            Map.of("color", "black"),
+            List.of(
+                new CreateOrderCommand.LinePartyData(
+                    "dept-hr",
+                    Set.of("RECEIVER")
+                )
+            )
+        )
+    )
+)).getSuccess();
+
+System.out.println("Corporate order created: " + corporateOrder.id());
+System.out.println("Line 1 (laptops) receiver: " + 
+    corporateOrder.lines().get(0).parties()
+        .stream()
+        .filter(p -> p.roles().contains("RECEIVER"))
+        .findFirst()
+        .map(p -> p.name())
+        .orElse("unknown"));
+```
+
+## Complete E-Commerce Example
+
+<CodeGroup>
+
+```java Order Flow
+import com.softwarearchetypes.ordering.*;
+import com.softwarearchetypes.ordering.commands.*;
+import com.softwarearchetypes.common.Result;
+import java.util.*;
+import java.time.LocalDateTime;
+
+public class ECommerceOrderFlow {
+    public static void main(String[] args) {
+        // Setup
+        OrderingConfiguration config = OrderingConfiguration.inMemory();
+        OrderingFacade facade = config.orderingFacade();
+        OrderingQueries queries = config.orderingQueries();
+        
+        // 1. Customer creates cart (draft order)
+        System.out.println("=== Step 1: Create Cart ===");
+        OrderView cart = facade.handle(new CreateOrderCommand(
+            List.of(
+                new CreateOrderCommand.OrderPartyData(
+                    "cust-001",
+                    "Anna Kowalska",
+                    "anna@example.com",
+                    Set.of("ORDERER", "PAYER", "RECEIVER")
+                ),
+                new CreateOrderCommand.OrderPartyData(
+                    "shop-online",
+                    "OnlineShop",
+                    "orders@shop.com",
+                    Set.of("EXECUTOR")
+                )
+            ),
+            List.of(
+                new CreateOrderCommand.OrderLineData(
+                    "BOOK-DOMAIN-PATTERNS",
+                    1,
+                    "pieces",
+                    Map.of("format", "hardcover"),
+                    null
+                )
+            )
+        )).getSuccess();
+        
+        System.out.println("✓ Cart created: " + cart.id());
+        System.out.println("  Status: " + cart.status());
+        System.out.println("  Items: " + cart.lines().size());
+        
+        // 2. Customer adds more items
+        System.out.println("\n=== Step 2: Add Items ===");
+        cart = facade.handle(new AddOrderLineCommand(
+            cart.id(),
+            "BOOK-CLEAN-CODE",
+            1,
+            "pieces",
+            Map.of("format", "paperback")
+        )).getSuccess();
+        
+        cart = facade.handle(new AddOrderLineCommand(
+            cart.id(),
+            "BOOKMARK-METAL",
+            3,
+            "pieces",
+            Map.of("color", "silver")
+        )).getSuccess();
+        
+        System.out.println("✓ Items added");
+        System.out.println("  Total items: " + cart.lines().size());
+        
+        // 3. Customer changes quantity
+        System.out.println("\n=== Step 3: Update Quantity ===");
+        OrderLineId bookmarkLineId = cart.lines().stream()
+            .filter(line -> line.productId().equals("BOOKMARK-METAL"))
+            .findFirst()
+            .map(OrderLineView::id)
+            .orElseThrow();
+        
+        cart = facade.handle(new ChangeOrderLineQuantityCommand(
+            cart.id(),
+            bookmarkLineId,
+            5,
+            "pieces"
+        )).getSuccess();
+        
+        System.out.println("✓ Bookmark quantity changed to 5");
+        
+        // 4. Customer checks out (confirms order)
+        System.out.println("\n=== Step 4: Checkout ===");
+        Result<String, OrderView> confirmResult = facade.handle(
+            new ConfirmOrderCommand(cart.id())
+        );
+        
+        if (confirmResult.success()) {
+            OrderView order = confirmResult.getSuccess();
+            System.out.println("✓ Order confirmed: " + order.id());
+            System.out.println("  Status: " + order.status());
+            
+            // Check integrations
+            System.out.println("  Inventory allocated: " + 
+                config.inventoryService().allocateRequests().size() + " items");
+            System.out.println("  Payment authorized: " + 
+                (config.paymentService().authorizeRequests().size() > 0 ? "Yes" : "No"));
+            System.out.println("  Fulfillment started: " + 
+                (config.fulfillmentService().startedOrders().size() > 0 ? "Yes" : "No"));
+            
+            // 5. Warehouse processes order
+            System.out.println("\n=== Step 5: Fulfillment ===");
+            facade.handle(new FulfillmentUpdated(
+                order.id(),
+                FulfillmentStatus.IN_PROGRESS,
+                "Order picked and packed",
+                LocalDateTime.now()
+            ));
+            
+            OrderView processing = queries.findById(order.id()).orElseThrow();
+            System.out.println("✓ Processing: " + processing.status());
+            
+            // 6. Order delivered
+            facade.handle(new FulfillmentUpdated(
+                order.id(),
+                FulfillmentStatus.COMPLETED,
+                "Delivered to customer address",
+                LocalDateTime.now()
+            ));
+            
+            OrderView fulfilled = queries.findById(order.id()).orElseThrow();
+            System.out.println("✓ Delivered: " + fulfilled.status());
+            
+            System.out.println("\n=== Order Complete ===");
+            System.out.println("Order ID: " + fulfilled.id());
+            System.out.println("Final Status: " + fulfilled.status());
+            System.out.println("Total Lines: " + fulfilled.lines().size());
+            
+        } else {
+            System.err.println("✗ Confirmation failed: " + confirmResult.getFailure());
+        }
+    }
+}
+```
+
+```output Expected Output
+=== Step 1: Create Cart ===
+✓ Cart created: f8a3b2c1-...
+  Status: DRAFT
+  Items: 1
+
+=== Step 2: Add Items ===
+✓ Items added
+  Total items: 3
+
+=== Step 3: Update Quantity ===
+✓ Bookmark quantity changed to 5
+
+=== Step 4: Checkout ===
+✓ Order confirmed: f8a3b2c1-...
+  Status: CONFIRMED
+  Inventory allocated: 3 items
+  Payment authorized: Yes
+  Fulfillment started: Yes
+
+=== Step 5: Fulfillment ===
+✓ Processing: PROCESSING
+✓ Delivered: FULFILLED
+
+=== Order Complete ===
+Order ID: f8a3b2c1-...
+Final Status: FULFILLED
+Total Lines: 3
+```
+
+</CodeGroup>
+
+## Common Patterns
+
+### Pattern: Guest Checkout
+
+Allow orders without registered accounts:
+
+```java
+OrderView guestOrder = facade.handle(new CreateOrderCommand(
+    List.of(
+        new CreateOrderCommand.OrderPartyData(
+            "guest-" + UUID.randomUUID(),
+            "Guest Customer",
+            "guest@temp.com",
+            Set.of("ORDERER", "PAYER", "RECEIVER")
+        )
+    ),
+    orderLines
+)).getSuccess();
+```
+
+### Pattern: Validation Before Confirmation
+
+```java
+Result<String, OrderView> validateAndConfirm(OrderId orderId) {
+    OrderView order = queries.findById(orderId).orElseThrow();
+    
+    // Validate order has lines
+    if (order.lines().isEmpty()) {
+        return Result.failure("Cannot confirm empty order");
+    }
+    
+    // Validate required parties
+    boolean hasPayer = order.parties().stream()
+        .anyMatch(p -> p.roles().contains("PAYER"));
+    
+    if (!hasPayer) {
+        return Result.failure("Order must have a PAYER");
+    }
+    
+    // Confirm
+    return facade.handle(new ConfirmOrderCommand(orderId));
+}
+```
+
+### Pattern: Bulk Order Creation
+
+```java
+List<OrderView> createBulkOrders(List<CreateOrderCommand> commands) {
+    return commands.stream()
+        .map(cmd -> facade.handle(cmd))
+        .filter(Result::success)
+        .map(Result::getSuccess)
+        .collect(Collectors.toList());
+}
+```
+
+### Pattern: Order Search and Filtering
+
+```java
+// Find all orders for a customer
+List<OrderView> findCustomerOrders(String customerId) {
+    return queries.findAll().stream()
+        .filter(order -> order.parties().stream()
+            .anyMatch(p -> p.partyId().equals(customerId)))
+        .collect(Collectors.toList());
+}
+
+// Find fulfilled orders
+List<OrderView> findFulfilledOrders() {
+    return queries.findAll().stream()
+        .filter(order -> order.status().equals("FULFILLED"))
+        .collect(Collectors.toList());
+}
+```
+
+## Integration Points
+
+### Inventory Service
+
+The inventory service allocates products when orders are confirmed:
+
+```java
+public interface InventoryService {
+    Result<String, List<AllocationId>> allocate(OrderId orderId, List<OrderLineView> lines);
+    void deallocate(OrderId orderId);
+    List<AllocateRequest> allocateRequests();  // For testing
+}
+```
+
+### Payment Service
+
+The payment service authorizes payment on confirmation:
+
+```java
+public interface PaymentService {
+    Result<String, AuthorizationId> authorize(OrderId orderId, Money amount);
+    void capture(AuthorizationId authId);
+    void refund(AuthorizationId authId);
+    List<AuthorizeRequest> authorizeRequests();  // For testing
+}
+```
+
+### Fulfillment Service
+
+The fulfillment service starts picking/packing:
+
+```java
+public interface FulfillmentService {
+    void startFulfillment(OrderId orderId);
+    void updateStatus(OrderId orderId, FulfillmentStatus status, String note);
+    List<OrderId> startedOrders();  // For testing
+}
+```
+
+## Next Steps
+
+- Learn about [Order Pricing](/examples/order-pricing) for integrating with the Pricing module
+- Explore [Party Role Policies](/concepts/party-policies) for complex authorization
+- See [Order Events](/concepts/order-events) for event-driven architectures
+
+<Note>
+  The Ordering module uses the Command pattern extensively. All operations return `Result<String, T>` for explicit error handling.
+</Note>

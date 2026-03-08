@@ -1,0 +1,312 @@
+---
+title: Quantity Module
+description: Type-safe quantities and monetary values with units of measurement
+icon: weight-scale
+---
+
+## Overview
+
+The **Quantity** module provides type-safe representations of measurable values with units. It includes support for physical quantities (weight, volume, etc.) and monetary values with multi-currency support.
+
+## Core Concepts
+
+### Quantity
+
+Represents an amount with a unit of measurement:
+
+```java Quantity Definition
+public record Quantity(BigDecimal amount, Unit unit) 
+    implements Comparable<Quantity> {
+    
+    public static Quantity of(BigDecimal amount, Unit unit);
+    public static Quantity of(double amount, Unit unit);
+    public static Quantity of(int amount, Unit unit);
+    
+    public Quantity add(Quantity other);
+    public Quantity subtract(Quantity other);
+}
+```
+
+**Examples:**
+```java
+// Create quantities
+Quantity weight = Quantity.of(100, Unit.of("kg", "kilogram"));
+Quantity volume = Quantity.of(500, Unit.of("L", "liter"));
+Quantity count = Quantity.of(1000, Unit.pieces());
+
+// Arithmetic operations (same units only)
+Quantity total = Quantity.of(50, Unit.of("kg"))
+    .add(Quantity.of(25, Unit.of("kg")));
+// Result: 75 kg
+```
+
+<Warning>
+  Quantities with different units cannot be added or subtracted:
+  ```java
+  // This throws IllegalArgumentException
+  Quantity.of(100, Unit.of("kg"))
+      .add(Quantity.of(50, Unit.of("L")));
+  ```
+</Warning>
+
+### Unit
+
+Represents a unit of measurement:
+
+```java
+public record Unit(String code, String name) {
+    public static Unit of(String code, String name);
+    public static Unit pieces();
+}
+```
+
+**Common units:**
+```java
+Unit.of("kg", "kilogram")
+Unit.of("L", "liter")
+Unit.of("m", "meter")
+Unit.of("m²", "square meter")
+Unit.pieces()  // For countable items
+```
+
+## Money Type
+
+The `Money` class provides comprehensive support for monetary values with multiple currencies.
+
+### Creating Money
+
+<CodeGroup>
+```java Factory Methods - PLN
+// Various ways to create PLN amounts
+Money pln1 = Money.pln(100);              // from int
+Money pln2 = Money.pln(99.99);            // from double
+Money pln3 = Money.pln(new BigDecimal("123.45"));
+Money pln4 = Money.pln("50.75");          // from string
+
+// Zero values
+Money zero = Money.zeroPln();
+Money one = Money.onePln();
+```
+
+```java Other Currencies
+// EUR
+Money eur = Money.eur(100);
+Money zeroEur = Money.zeroEur();
+
+// USD
+Money usd = Money.usd(200);
+Money zeroUsd = Money.zeroUsd();
+
+// GBP
+Money gbp = Money.gbp(150);
+Money zeroGbp = Money.zeroGbp();
+
+// Generic
+Money custom = Money.of(1000, "CHF");
+Money zeroCustom = Money.zero("CHF");
+```
+</CodeGroup>
+
+### Arithmetic Operations
+
+```java Money Operations
+Money base = Money.pln(100);
+
+// Addition and subtraction
+Money sum = base.add(Money.pln(50));          // 150 PLN
+Money diff = base.subtract(Money.pln(30));    // 70 PLN
+
+// Multiplication
+Money doubled = base.multiply(new BigDecimal("2"));      // 200 PLN
+Money tripled = base.multiply(3);                        // 300 PLN
+
+// Division
+Money half = base.divide(new BigDecimal("2"));           // 50 PLN
+Money divided = base.divide(new BigDecimal("3"), 
+                           RoundingMode.HALF_UP);       // 33.33 PLN
+
+// Division with remainder
+Money[] result = base.divideAndRemainder(new BigDecimal("3"));
+// result[0] = 33 PLN (quotient)
+// result[1] = 1 PLN (remainder)
+
+// Negation and absolute value
+Money negative = base.negate();               // -100 PLN
+Money abs = negative.abs();                   // 100 PLN
+```
+
+### Percentage Calculations
+
+```java Working with Percentages
+Money amount = Money.pln(1000);
+
+// Calculate percentage
+Money discount = amount.multiply(Percentage.of(20));
+// Result: 200 PLN (20% of 1000)
+
+// Apply discount
+Money final = amount.subtract(discount);
+// Result: 800 PLN
+
+// Common percentages
+Money half = amount.multiply(Percentage.of(50));          // 500 PLN
+Money same = amount.multiply(Percentage.oneHundred());    // 1000 PLN
+Money none = amount.multiply(Percentage.zero());          // 0 PLN
+```
+
+### Comparisons
+
+<CodeGroup>
+```java Comparison Methods
+Money m1 = Money.pln(100);
+Money m2 = Money.pln(50);
+
+// Direct comparisons
+boolean greater = m1.isGreaterThan(m2);              // true
+boolean greaterOrEq = m1.isGreaterThanOrEqualTo(m2); // true
+boolean zero = m1.isZero();                          // false
+boolean negative = m1.isNegative();                  // false
+
+// Comparable interface
+int comparison = m1.compareTo(m2);                   // > 0
+```
+
+```java Min/Max Operations
+// Static methods
+Money min = Money.min(Money.pln(100), Money.pln(50));
+// Result: 50 PLN
+
+Money max = Money.max(Money.pln(100), Money.pln(50));
+// Result: 100 PLN
+
+// From collection
+Set<Money> amounts = Set.of(
+    Money.pln(100),
+    Money.pln(25),
+    Money.pln(50)
+);
+Optional<Money> minimum = Money.min(amounts);
+// Result: Optional[25 PLN]
+```
+</CodeGroup>
+
+### Currency Handling
+
+```java Currency Information
+Money amount = Money.eur(150);
+
+// Get currency code
+String code = amount.currency();           // "EUR"
+
+// Get currency unit (javax.money)
+CurrencyUnit unit = amount.currencyUnit();
+
+// Extract value
+BigDecimal value = amount.value();         // 150
+
+// String representation
+String str = amount.toString();            // "EUR 150"
+```
+
+<Note>
+  The Money class uses **JavaMoney (JSR 354)** internally via the `javamoney-moneta` library, ensuring proper currency handling and precision.
+</Note>
+
+## Real-World Usage
+
+### In Pricing Module
+
+```java Pricing Calculation
+Calculator calculator = new SimpleFixedCalculator(
+    "basic-fee", 
+    Money.pln(100)
+);
+
+Money price = calculator.calculate(parameters);
+```
+
+### In Accounting Module
+
+```java Account Transactions
+Result<String, TransactionId> result = accountingFacade.transfer(
+    fromAccount,
+    toAccount,
+    Money.pln(500),
+    occurredAt,
+    appliesAt
+);
+```
+
+### In Ordering Module
+
+```java Order Pricing
+OrderLine line = new OrderLine(
+    lineId,
+    productId,
+    Quantity.of(5, Unit.pieces()),
+    specification,
+    OrderLinePricing.of(Money.pln(100), Money.pln(500))
+);
+```
+
+## Testing Examples
+
+From `MoneyTest.java`:
+
+```java Money Tests
+@Test
+void shouldAddTwoMoneyAmounts() {
+    Money first = Money.pln(100);
+    Money second = Money.pln(50);
+    
+    Money result = first.add(second);
+    
+    assertEquals(Money.pln(150), result);
+}
+
+@Test
+void shouldMultiplyMoneyByPercentage() {
+    Money money = Money.pln(1000);
+    Percentage percentage = Percentage.of(20);
+    
+    Money result = money.multiply(percentage);
+    
+    // 1000 * 20% = 200
+    assertEquals(0, new BigDecimal("200.00").compareTo(result.value()));
+}
+```
+
+## Best Practices
+
+1. **Use BigDecimal** for precise monetary calculations
+2. **Always specify rounding mode** for division operations
+3. **Validate units** when adding/subtracting quantities
+4. **Use factory methods** (pln(), eur()) for readability
+5. **Avoid floating-point** arithmetic for money
+
+## Common Patterns
+
+<CardGroup cols={2}>
+  <Card title="Money as Value Object" icon="coin">
+    Money is immutable - operations return new instances
+  </Card>
+  
+  <Card title="Type Safety" icon="shield">
+    Quantities enforce unit compatibility at runtime
+  </Card>
+  
+  <Card title="Precision" icon="calculator">
+    Uses BigDecimal to avoid floating-point errors
+  </Card>
+  
+  <Card title="Multi-Currency" icon="globe">
+    Full support for different currencies via JavaMoney
+  </Card>
+</CardGroup>
+
+## Related Modules
+
+- Used extensively in [Pricing](/modules/pricing) for calculations
+- [Accounting](/modules/accounting) uses Money for all financial transactions
+- [Ordering](/modules/ordering) uses Quantity for order line quantities
+- [Inventory](/modules/inventory) uses Quantity for stock levels

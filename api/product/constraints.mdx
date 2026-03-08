@@ -1,0 +1,374 @@
+---
+title: "Feature Value Constraints"
+description: "Constraint system for validating product feature values"
+---
+
+## Overview
+
+`FeatureValueConstraint` defines constraints on product feature values, including type validation and value validation. Each constraint specifies the expected value type and validates whether a given value satisfies the constraint.
+
+**Package:** `com.softwarearchetypes.product`
+
+**Source:** `/product/src/main/java/com/softwarearchetypes/product/FeatureValueConstraint.java:21`
+
+## Interface
+
+```java
+interface FeatureValueConstraint
+```
+
+Core interface for all feature value constraints.
+
+## Core Methods
+
+### valueType
+
+```java
+FeatureValueType valueType()
+```
+
+Returns the type of values this constraint applies to.
+
+<ResponseField name="return" type="FeatureValueType">
+  The value type (TEXT, INTEGER, DECIMAL, DATE, or BOOLEAN)
+</ResponseField>
+
+### type
+
+```java
+String type()
+```
+
+Returns the constraint type identifier for persistence/deserialization.
+
+<ResponseField name="return" type="String">
+  Constraint type identifier (e.g., "ALLOWED_VALUES", "NUMERIC_RANGE", "REGEX")
+</ResponseField>
+
+### isValid
+
+```java
+boolean isValid(Object value)
+```
+
+Validates whether the given value satisfies this constraint. The value must be of the correct type and meet the constraint's specific requirements.
+
+<ParamField path="value" type="Object" required>
+  The value to validate
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the value is valid, `false` otherwise
+</ResponseField>
+
+### desc
+
+```java
+String desc()
+```
+
+Returns a human-readable description of this constraint.
+
+<ResponseField name="return" type="String">
+  Human-readable description (e.g., "one of: {red, blue, green}" or "integer between 1 and 100")
+</ResponseField>
+
+### toString
+
+```java
+default String toString(Object value)
+```
+
+Converts the object to its String representation for persistence.
+
+<ParamField path="value" type="Object" required>
+  The value to convert (must be valid)
+</ParamField>
+
+<ResponseField name="return" type="String">
+  String representation
+</ResponseField>
+
+### fromString
+
+```java
+default Object fromString(String value)
+```
+
+Converts a String representation to the object, applying validation.
+
+<ParamField path="value" type="String" required>
+  The String to convert
+</ParamField>
+
+<ResponseField name="return" type="Object">
+  The converted and validated object
+</ResponseField>
+
+**Throws:** `IllegalArgumentException` if the value cannot be parsed or is invalid.
+
+## Constraint Implementations
+
+### AllowedValuesConstraint
+
+Restricts text values to a predefined set of allowed values.
+
+**Type identifier:** `ALLOWED_VALUES`
+
+**Value type:** `TEXT`
+
+```java
+class AllowedValuesConstraint implements FeatureValueConstraint
+```
+
+#### Constructor
+
+```java
+AllowedValuesConstraint(Set<String> allowedValues)
+```
+
+<ParamField path="allowedValues" type="Set<String>" required>
+  Set of allowed values (must not be empty)
+</ParamField>
+
+#### Factory Method
+
+```java
+static AllowedValuesConstraint of(String... values)
+```
+
+Creates an AllowedValuesConstraint from varargs.
+
+<ParamField path="values" type="String..." required>
+  Allowed values (must not be empty)
+</ParamField>
+
+<ResponseField name="return" type="AllowedValuesConstraint">
+  New constraint instance
+</ResponseField>
+
+**Example:**
+```java
+FeatureValueConstraint colorConstraint = 
+    AllowedValuesConstraint.of("red", "blue", "green");
+
+assert colorConstraint.isValid("red");    // true
+assert !colorConstraint.isValid("yellow"); // false
+assert colorConstraint.desc().equals("one of: [red, blue, green]");
+```
+
+#### allowedValues
+
+```java
+Set<String> allowedValues()
+```
+
+Returns the set of allowed values.
+
+<ResponseField name="return" type="Set<String>">
+  Immutable set of allowed values
+</ResponseField>
+
+### NumericRangeConstraint
+
+Restricts integer values to a numeric range [min, max].
+
+**Type identifier:** `NUMERIC_RANGE`
+
+**Value type:** `INTEGER`
+
+```java
+class NumericRangeConstraint implements FeatureValueConstraint
+```
+
+#### Constructor
+
+```java
+NumericRangeConstraint(int min, int max)
+```
+
+<ParamField path="min" type="int" required>
+  Minimum value (inclusive)
+</ParamField>
+
+<ParamField path="max" type="int" required>
+  Maximum value (inclusive, must be >= min)
+</ParamField>
+
+#### Factory Method
+
+```java
+static FeatureValueConstraint between(int min, int max)
+```
+
+Creates a NumericRangeConstraint.
+
+<ParamField path="min" type="int" required>
+  Minimum value (inclusive)
+</ParamField>
+
+<ParamField path="max" type="int" required>
+  Maximum value (inclusive)
+</ParamField>
+
+<ResponseField name="return" type="FeatureValueConstraint">
+  New constraint instance
+</ResponseField>
+
+**Example:**
+```java
+FeatureValueConstraint yearConstraint = 
+    NumericRangeConstraint.between(2020, 2024);
+
+assert yearConstraint.isValid(2022);  // true
+assert !yearConstraint.isValid(2019); // false
+assert !yearConstraint.isValid(2025); // false
+assert yearConstraint.desc().equals("integer between 2020 and 2024");
+```
+
+#### min
+
+```java
+int min()
+```
+
+Returns the minimum value.
+
+<ResponseField name="return" type="int">
+  The minimum value
+</ResponseField>
+
+#### max
+
+```java
+int max()
+```
+
+Returns the maximum value.
+
+<ResponseField name="return" type="int">
+  The maximum value
+</ResponseField>
+
+### DecimalRangeConstraint
+
+Restricts decimal values to a range.
+
+**Type identifier:** `DECIMAL_RANGE`
+
+**Value type:** `DECIMAL`
+
+Similar to NumericRangeConstraint but for BigDecimal values.
+
+### RegexConstraint
+
+Validates text against a regex pattern.
+
+**Type identifier:** `REGEX`
+
+**Value type:** `TEXT`
+
+**Example:**
+```java
+FeatureValueConstraint emailConstraint = 
+    new RegexConstraint("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");
+
+assert emailConstraint.isValid("user@example.com");  // true
+assert !emailConstraint.isValid("invalid-email");    // false
+```
+
+### DateRangeConstraint
+
+Restricts dates to a range.
+
+**Type identifier:** `DATE_RANGE`
+
+**Value type:** `DATE`
+
+**Example:**
+```java
+FeatureValueConstraint dateConstraint = 
+    new DateRangeConstraint(
+        LocalDate.of(2024, 1, 1),
+        LocalDate.of(2024, 12, 31)
+    );
+
+assert dateConstraint.isValid(LocalDate.of(2024, 6, 15));  // true
+assert !dateConstraint.isValid(LocalDate.of(2025, 1, 1));  // false
+```
+
+### Unconstrained
+
+Accepts any value of the specified type (no additional validation).
+
+**Type identifier:** `UNCONSTRAINED`
+
+**Example:**
+```java
+FeatureValueConstraint anyText = Unconstrained.text();
+assert anyText.isValid("any string");  // true
+
+FeatureValueConstraint anyInteger = Unconstrained.integer();
+assert anyInteger.isValid(42);  // true
+```
+
+## Usage Example
+
+```java
+// Define a feature type with constraints
+ProductFeatureTypeDefinition colorFeature = ProductFeatureTypeDefinition.builder()
+    .type(ProductFeatureType.of("Color"))
+    .constraint(AllowedValuesConstraint.of("Black", "White", "Silver"))
+    .build();
+
+ProductFeatureTypeDefinition yearFeature = ProductFeatureTypeDefinition.builder()
+    .type(ProductFeatureType.of("ManufactureYear"))
+    .constraint(NumericRangeConstraint.between(2020, 2024))
+    .build();
+
+// Validate feature values
+FeatureValueConstraint colorConstraint = colorFeature.constraint();
+assert colorConstraint.isValid("Black");   // true
+assert !colorConstraint.isValid("Red");    // false
+
+// Convert to/from String for persistence
+String stored = colorConstraint.toString("Black");
+Object restored = colorConstraint.fromString(stored);
+assert restored.equals("Black");
+
+// Invalid value throws exception
+try {
+    colorConstraint.fromString("Red");
+} catch (IllegalArgumentException e) {
+    // Exception message: "Invalid value: 'Red'. Expected: one of: [Black, White, Silver]"
+}
+```
+
+## Persistence Configuration
+
+Constraints can be serialized to JSON for persistence:
+
+**AllowedValuesConstraint:**
+```json
+{
+  "type": "ALLOWED_VALUES",
+  "allowedValues": ["red", "blue", "green"]
+}
+```
+
+**NumericRangeConstraint:**
+```json
+{
+  "type": "NUMERIC_RANGE",
+  "min": 2020,
+  "max": 2024
+}
+```
+
+**RegexConstraint:**
+```json
+{
+  "type": "REGEX",
+  "pattern": "^[A-Z]{3}-\\d{4}$"
+}
+```

@@ -1,0 +1,563 @@
+---
+title: 'Plan vs Execution Pattern'
+description: 'Compare planned outcomes with actual execution using tolerance strategies'
+---
+
+The Plan vs Execution module provides a framework for analyzing the delta between what was planned and what actually happened. This is crucial for production planning, payment schedules, delivery commitments, and any scenario requiring plan-vs-reality analysis.
+
+## Prerequisites
+
+```xml
+<dependency>
+    <groupId>com.softwarearchetypes</groupId>
+    <artifactId>planvsexecution</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+## Core Concepts
+
+### The Problem
+
+Businesses constantly face the question: **"How does execution compare to the plan?"**
+
+- Production: Did we produce what we planned?
+- Payments: Did customers pay according to schedule?
+- Deliveries: Were deliveries on time?
+
+### The Solution
+
+The module provides:
+
+1. **Immutable Plan** - A snapshot of what should happen
+2. **Execution History** - What actually happened
+3. **Tolerance Strategy** - Rules for acceptable deviations
+4. **Delta Calculator** - Computes matched/unmatched items
+5. **Statistics** - Summary metrics (match rate, deviations, etc.)
+
+## Key Principle: Separation
+
+<Warning>
+  **Never store plan and execution in the same entity!** This prevents:
+  - Comparing one execution against multiple plans
+  - Historical plan reconstruction
+  - What-if analysis
+  - Simulation
+</Warning>
+
+See [Bad Implementation Anti-Pattern](/examples/bad-implementation) for what NOT to do.
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Setup: Production Analysis
+
+Analyze whether production met targets:
+
+```java
+import com.softwarearchetypes.planvsexecution.productionanalysis.*;
+import com.softwarearchetypes.planvsexecution.productionanalysis.delta.*;
+import com.softwarearchetypes.planvsexecution.productionanalysis.tolerance.*;
+import java.util.List;
+
+ProductionAnalysisFacade facade = new ProductionAnalysisFacade();
+```
+
+### Create a Production Plan
+
+Define what should be produced:
+
+```java
+ProductionPlan plan = ProductionPlan.of(List.of(
+    PlannedProduction.of("WIDGET-A", 1000),
+    PlannedProduction.of("WIDGET-B", 1500),
+    PlannedProduction.of("WIDGET-C", 800)
+));
+
+System.out.println("Plan created for 3 products");
+System.out.println("Total planned: " + 
+    (1000 + 1500 + 800) + " units");
+```
+
+<Note>
+  The plan is **immutable**. You can create multiple plans and compare the same execution against all of them.
+</Note>
+
+### Record Actual Production
+
+Capture what was actually produced:
+
+```java
+List<ActualProduction> actual = List.of(
+    ActualProduction.of("WIDGET-A", 998),   // 2 units short
+    ActualProduction.of("WIDGET-B", 1520),  // 20 units over
+    ActualProduction.of("WIDGET-C", 800)    // Perfect match
+);
+
+System.out.println("Actual production recorded");
+```
+
+### Define Tolerance Strategy
+
+Decide what deviations are acceptable:
+
+```java
+// Exact matching: no tolerance
+ToleranceStrategy exactMatch = ToleranceBuilder.exact();
+
+// Lenient: accept ±5% or ±10 units (whichever is larger)
+ToleranceStrategy lenient = ToleranceBuilder.quantityTolerance(
+    5.0,    // 5% deviation
+    10      // or 10 units absolute
+);
+```
+
+### Calculate Delta
+
+Compare plan vs execution:
+
+```java
+// Strict comparison
+DeltaResult strictResult = facade.analyze(plan, actual, exactMatch);
+
+System.out.println("=== Strict Analysis ===");
+System.out.println("Matched: " + strictResult.matched().size());
+System.out.println("Unmatched planned: " + strictResult.unmatchedPlanned().size());
+System.out.println("Perfect match: " + strictResult.isPerfectMatch());
+
+// Lenient comparison
+DeltaResult lenientResult = facade.analyze(plan, actual, lenient);
+
+System.out.println("\n=== Lenient Analysis ===");
+System.out.println("Matched: " + lenientResult.matched().size());
+System.out.println("Unmatched planned: " + lenientResult.unmatchedPlanned().size());
+System.out.println("Perfect match: " + lenientResult.isPerfectMatch());
+```
+
+### Analyze Statistics
+
+Get detailed metrics:
+
+```java
+DeltaStatistics stats = lenientResult.statistics();
+
+System.out.println("\n=== Statistics ===");
+System.out.println("Match rate: " + 
+    String.format("%.1f%%", lenientResult.matchRate() * 100));
+System.out.println("Under-produced: " + 
+    stats.totalUnderProducedQuantity() + " units");
+System.out.println("Over-produced: " + 
+    stats.totalOverProducedQuantity() + " units");
+System.out.println("Net difference: " + 
+    stats.netQuantityDifference() + " units");
+```
+
+### Handle Partial/Split Production
+
+One plan item might match multiple actual batches:
+
+```java
+ProductionPlan bigOrder = ProductionPlan.of(List.of(
+    PlannedProduction.of("WIDGET-A", 5000)
+));
+
+// Produced in 3 separate batches
+List<ActualProduction> splitProduction = List.of(
+    ActualProduction.of("WIDGET-A", 2100),
+    ActualProduction.of("WIDGET-A", 1950),
+    ActualProduction.of("WIDGET-A", 1000)
+);
+
+ToleranceStrategy tolerance = ToleranceBuilder.quantityTolerance(5.0, 50);
+DeltaResult result = facade.analyze(bigOrder, splitProduction, tolerance);
+
+if (result.matched().size() > 0) {
+    ProductionMatch match = result.matched().get(0);
+    System.out.println("Planned: " + match.planned().quantity());
+    System.out.println("Actual batches: " + match.actual().size());
+    System.out.println("Total produced: " + match.totalProducedQuantity());
+}
+```
+
+</Steps>
+
+## Payment Schedule Analysis
+
+Analyze customer payments against installment schedule:
+
+<CodeGroup>
+
+```java Payment Analysis
+import com.softwarearchetypes.planvsexecution.repaymentanalysis.*;
+import com.softwarearchetypes.planvsexecution.repaymentanalysis.delta.*;
+import com.softwarearchetypes.planvsexecution.repaymentanalysis.tolerance.*;
+import static com.softwarearchetypes.quantity.money.Money.pln;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+
+public class PaymentScheduleExample {
+    private static Instant instant(int year, int month, int day) {
+        return LocalDateTime.of(year, month, day, 0, 0)
+            .toInstant(ZoneOffset.UTC);
+    }
+    
+    public static void main(String[] args) {
+        ScheduleAnalysisFacade facade = ScheduleAnalysisConfiguration.facade();
+        
+        // Loan payment schedule (what customer should pay)
+        PaymentSchedule planned = PaymentSchedule.of(List.of(
+            Payment.of(instant(2024, 1, 15), pln(500.00)),
+            Payment.of(instant(2024, 2, 15), pln(500.00)),
+            Payment.of(instant(2024, 3, 15), pln(500.00))
+        ));
+        
+        // What customer actually paid
+        PaymentSchedule actual = PaymentSchedule.of(List.of(
+            Payment.of(instant(2024, 1, 14), pln(500.00)),  // 1 day early
+            Payment.of(instant(2024, 2, 20), pln(500.00)),  // 5 days late
+            Payment.of(instant(2024, 3, 15), pln(500.00))   // On time
+        ));
+        
+        // Define tolerance: ±5 groszy, ±7 days
+        ToleranceStrategy tolerance = ToleranceBuilder.tolerance()
+            .money(pln(0.05))
+            .days(7)
+            .build();
+        
+        // Analyze
+        DeltaResult result = facade.analyze(planned, actual, tolerance);
+        
+        System.out.println("=== Payment Schedule Analysis ===");
+        System.out.println("Matched payments: " + result.matched().size());
+        System.out.println("On-time: " + result.statistics().onTimeCount());
+        System.out.println("Late: " + result.statistics().lateCount());
+        System.out.println("Perfect match: " + result.isPerfectMatch());
+        
+        // Check if customer is in good standing
+        if (result.isPerfectMatch()) {
+            System.out.println("\n✓ Customer is in good standing");
+        } else if (result.matched().size() == planned.payments().size()) {
+            System.out.println("\n⚠ Customer paid all, but with delays");
+        } else {
+            System.out.println("\n✗ Customer has missed payments");
+        }
+    }
+}
+```
+
+```output Output
+=== Payment Schedule Analysis ===
+Matched payments: 3
+On-time: 2
+Late: 1
+Perfect match: false
+
+⚠ Customer paid all, but with delays
+```
+
+</CodeGroup>
+
+## Partial Payments Pattern
+
+Handle customers paying in multiple installments:
+
+```java
+import static com.softwarearchetypes.quantity.money.Money.pln;
+
+// Customer should pay 1000 PLN on Jan 15
+PaymentSchedule planned = PaymentSchedule.of(List.of(
+    Payment.of(instant(2024, 1, 15), pln(1000.00))
+));
+
+// Customer paid in 3 parts
+PaymentSchedule actual = PaymentSchedule.of(List.of(
+    Payment.of(instant(2024, 1, 10), pln(400.00)),
+    Payment.of(instant(2024, 1, 12), pln(300.00)),
+    Payment.of(instant(2024, 1, 14), pln(300.00))
+));
+
+// Allow partial payments that sum to installment
+ToleranceStrategy partials = ToleranceBuilder.partialPayments(
+    pln(0.05),                      // 5 groszy tolerance
+    instant(2024, 1, 15)            // Deadline
+);
+
+DeltaResult result = facade.analyze(planned, actual, partials);
+
+if (result.isPerfectMatch()) {
+    PaymentMatch match = result.matched().get(0);
+    System.out.println("Planned: 1 payment of " + match.planned().amount());
+    System.out.println("Actual: " + match.actual().size() + 
+        " partial payments");
+    System.out.println("Total: " + match.totalActualAmount());
+    System.out.println("✓ Accepted");
+}
+```
+
+Output:
+```
+Planned: 1 payment of 1000.00 PLN
+Actual: 3 partial payments
+Total: 1000.00 PLN
+✓ Accepted
+```
+
+## What-If Analysis: Compare Multiple Plans
+
+The key advantage: **compare same execution against different plans**.
+
+```java
+// Scenario: Production line produced these amounts
+List<ActualProduction> actualProduction = List.of(
+    ActualProduction.of("WIDGET-A", 950)
+);
+
+// Original plan
+ProductionPlan originalPlan = ProductionPlan.of(List.of(
+    PlannedProduction.of("WIDGET-A", 1000)
+));
+
+// Revised plan (after market feedback)
+ProductionPlan revisedPlan = ProductionPlan.of(List.of(
+    PlannedProduction.of("WIDGET-A", 900)
+));
+
+// Optimistic plan (stretch goal)
+ProductionPlan optimisticPlan = ProductionPlan.of(List.of(
+    PlannedProduction.of("WIDGET-A", 1200)
+));
+
+ToleranceStrategy tolerance = ToleranceBuilder.exact();
+
+// Compare execution against ALL THREE plans
+DeltaResult vsOriginal = facade.analyze(
+    originalPlan, actualProduction, tolerance
+);
+DeltaResult vsRevised = facade.analyze(
+    revisedPlan, actualProduction, tolerance
+);
+DeltaResult vsOptimistic = facade.analyze(
+    optimisticPlan, actualProduction, tolerance
+);
+
+System.out.println("Same execution, different plans:");
+System.out.println("  vs Original (1000): " + 
+    (vsOriginal.isPerfectMatch() ? "Match" : "Miss"));
+System.out.println("  vs Revised (900): " + 
+    (vsRevised.isPerfectMatch() ? "Match" : "Miss"));
+System.out.println("  vs Optimistic (1200): " + 
+    (vsOptimistic.isPerfectMatch() ? "Match" : "Miss"));
+```
+
+Output:
+```
+Same execution, different plans:
+  vs Original (1000): Miss
+  vs Revised (900): Miss
+  vs Optimistic (1200): Miss
+```
+
+<Note>
+  This is **impossible** if plan and execution are in the same mutable entity! See [Bad Implementation](/examples/bad-implementation) for details.
+</Note>
+
+## Configurable Plans with Modification Rules
+
+For advanced scenarios, create plans that automatically adjust based on execution:
+
+```java
+import com.softwarearchetypes.planvsexecution.productionanalysis.modification.*;
+
+// Create configurable plan
+ConfigurableProductionPlan configurablePlan = 
+    new ConfigurableProductionPlan(originalPlan);
+
+// Add modification rule: if under-producing, increase buffer
+ModificationRule increaseBufferRule = new ModificationRule(
+    new UnderProductionCondition(0.9),  // If below 90%
+    new IncreaseBufferModifier(1.1)     // Increase plan by 10%
+);
+
+PlanModificationOrchestrator orchestrator = 
+    new PlanModificationOrchestrator(List.of(increaseBufferRule));
+
+// Simulate modification based on execution
+ProductionPlan adjustedPlan = orchestrator.applyModifications(
+    configurablePlan,
+    actualProduction
+);
+
+System.out.println("Original plan: " + 
+    originalPlan.items().get(0).quantity());
+System.out.println("Adjusted plan: " + 
+    adjustedPlan.items().get(0).quantity());
+```
+
+## Complete Production Analysis Example
+
+<CodeGroup>
+
+```java Production Example
+import com.softwarearchetypes.planvsexecution.productionanalysis.*;
+import com.softwarearchetypes.planvsexecution.productionanalysis.delta.*;
+import com.softwarearchetypes.planvsexecution.productionanalysis.tolerance.*;
+import java.util.List;
+
+public class ProductionAnalysisExample {
+    public static void main(String[] args) {
+        ProductionAnalysisFacade facade = new ProductionAnalysisFacade();
+        
+        System.out.println("=== Monthly Production Analysis ===");
+        
+        // Monthly plan
+        ProductionPlan march2024 = ProductionPlan.of(List.of(
+            PlannedProduction.of("ENGINE-V6", 500),
+            PlannedProduction.of("ENGINE-V8", 200),
+            PlannedProduction.of("TRANSMISSION-AUTO", 650),
+            PlannedProduction.of("TRANSMISSION-MANUAL", 50)
+        ));
+        
+        System.out.println("\nPlanned for March 2024:");
+        march2024.items().forEach(item -> 
+            System.out.println("  " + item.productId() + ": " + 
+                item.quantity() + " units")
+        );
+        
+        // Actual production
+        List<ActualProduction> actual = List.of(
+            ActualProduction.of("ENGINE-V6", 485),
+            ActualProduction.of("ENGINE-V6", 18),  // Small catch-up batch
+            ActualProduction.of("ENGINE-V8", 205),
+            ActualProduction.of("TRANSMISSION-AUTO", 640),
+            ActualProduction.of("TRANSMISSION-MANUAL", 52)
+        );
+        
+        System.out.println("\nActual production:");
+        actual.forEach(prod -> 
+            System.out.println("  " + prod.productId() + ": " + 
+                prod.quantity() + " units")
+        );
+        
+        // Tolerance: ±3% or ±15 units
+        ToleranceStrategy tolerance = ToleranceBuilder.quantityTolerance(3.0, 15);
+        
+        // Analyze
+        DeltaResult result = facade.analyze(march2024, actual, tolerance);
+        
+        System.out.println("\n=== Analysis Results ===");
+        System.out.println("Match rate: " + 
+            String.format("%.1f%%", result.matchRate() * 100));
+        System.out.println("Matched products: " + result.matched().size() + 
+            " of " + result.totalPlannedProducts());
+        
+        // Show matches
+        System.out.println("\nMatched:");
+        result.matched().forEach(match -> {
+            System.out.println("  " + match.planned().productId());
+            System.out.println("    Planned: " + match.planned().quantity());
+            System.out.println("    Actual: " + match.totalProducedQuantity() + 
+                " (in " + match.actual().size() + " batches)");
+        });
+        
+        // Show misses
+        if (!result.unmatchedPlanned().isEmpty()) {
+            System.out.println("\nUnmatched:");
+            result.unmatchedPlanned().forEach(planned ->
+                System.out.println("  " + planned.productId() + ": " + 
+                    planned.quantity() + " (not produced)")
+            );
+        }
+        
+        // Statistics
+        DeltaStatistics stats = result.statistics();
+        System.out.println("\n=== Statistics ===");
+        System.out.println("Under-production: " + 
+            stats.totalUnderProducedQuantity() + " units");
+        System.out.println("Over-production: " + 
+            stats.totalOverProducedQuantity() + " units");
+        System.out.println("Net difference: " + 
+            (stats.netQuantityDifference() >= 0 ? "+" : "") +
+            stats.netQuantityDifference() + " units");
+    }
+}
+```
+
+</CodeGroup>
+
+## Common Patterns
+
+### Pattern: Grade Execution Performance
+
+```java
+public String gradeExecution(DeltaResult result) {
+    double matchRate = result.matchRate();
+    
+    if (matchRate >= 0.95 && result.isPerfectMatch()) {
+        return "A+ (Perfect execution)";
+    } else if (matchRate >= 0.95) {
+        return "A (Excellent - all items within tolerance)";
+    } else if (matchRate >= 0.85) {
+        return "B (Good - most items delivered)";
+    } else if (matchRate >= 0.70) {
+        return "C (Acceptable - significant misses)";
+    } else {
+        return "F (Failed - execution far from plan)";
+    }
+}
+```
+
+### Pattern: Alert on Critical Misses
+
+```java
+public void checkCriticalMisses(
+    DeltaResult result,
+    Set<String> criticalProducts
+) {
+    result.unmatchedPlanned().stream()
+        .filter(planned -> criticalProducts.contains(planned.productId()))
+        .forEach(planned -> {
+            System.err.println("CRITICAL MISS: " + planned.productId());
+            System.err.println("  Expected: " + planned.quantity());
+            System.err.println("  Actual: 0");
+            // Trigger alerts, create incidents, etc.
+        });
+}
+```
+
+### Pattern: Trend Analysis
+
+```java
+public void analyzeTrend(
+    List<DeltaResult> monthlyResults
+) {
+    System.out.println("=== 6-Month Trend ===");
+    
+    for (int i = 0; i < monthlyResults.size(); i++) {
+        DeltaResult result = monthlyResults.get(i);
+        System.out.println("Month " + (i + 1) + ": " + 
+            String.format("%.1f%%", result.matchRate() * 100));
+    }
+    
+    // Calculate improvement
+    double firstMonth = monthlyResults.get(0).matchRate();
+    double lastMonth = monthlyResults.get(monthlyResults.size() - 1).matchRate();
+    double improvement = (lastMonth - firstMonth) * 100;
+    
+    System.out.println("\nImprovement: " + 
+        (improvement > 0 ? "+" : "") + 
+        String.format("%.1f%%", improvement));
+}
+```
+
+## Next Steps
+
+- **Anti-patterns**: See [Bad Implementation](/examples/bad-implementation) to learn what NOT to do
+- **Resolution Mismatch**: See [Resolution Mismatch](/examples/resolution-mismatch) for handling different granularities
+- **Advanced Tolerance**: Learn about custom tolerance strategies in the API docs
+
+<Note>
+  The Plan vs Execution module enables **combinatoric analysis**: M plans × N executions = M×N deltas. This is only possible with immutable, separated data.
+</Note>

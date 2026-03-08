@@ -1,0 +1,339 @@
+---
+title: "Account"
+description: "Core entity representing an accounting account with balance tracking and entry management"
+---
+
+## Overview
+
+The `Account` class represents a single accounting account in the system. It maintains a balance, tracks entries, and supports optimistic locking for concurrent updates. Accounts are classified by type (ASSET, LIABILITY, EXPENSE, REVENUE, OFF_BALANCE) and accumulate entries through transactions.
+
+**Package:** `com.softwarearchetypes.accounting`
+
+**Access:** Package-private class (accessed through `AccountingFacade`)
+
+## Constructors
+
+### Primary Constructor
+
+```java
+Account(
+    AccountId accountId,
+    AccountType type,
+    AccountName name,
+    Money balance,
+    Version version
+)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  Unique identifier for the account (must not be null)
+</ParamField>
+
+<ParamField path="type" type="AccountType" required>
+  Account classification: ASSET, LIABILITY, EXPENSE, REVENUE, or OFF_BALANCE
+</ParamField>
+
+<ParamField path="name" type="AccountName" required>
+  Human-readable account name
+</ParamField>
+
+<ParamField path="balance" type="Money">
+  Initial balance (defaults to zero PLN if null)
+</ParamField>
+
+<ParamField path="version" type="Version" required>
+  Version for optimistic locking
+</ParamField>
+
+### Simplified Constructors
+
+```java
+Account(AccountId accountId, AccountType type, AccountName name)
+Account(AccountId accountId, AccountType type, AccountName name, Version version)
+```
+
+These constructors default the balance to zero PLN and version to initial if not specified.
+
+## Properties
+
+### id
+
+Returns the unique account identifier.
+
+```java
+AccountId id()
+```
+
+<ResponseField name="AccountId" type="AccountId">
+  The account's unique identifier
+</ResponseField>
+
+### name
+
+Returns the account name as a string.
+
+```java
+String name()
+```
+
+<ResponseField name="String" type="String">
+  Human-readable account name
+</ResponseField>
+
+### type
+
+Returns the account type classification.
+
+```java
+AccountType type()
+```
+
+<ResponseField name="AccountType" type="AccountType">
+  Account classification (ASSET, LIABILITY, EXPENSE, REVENUE, OFF_BALANCE)
+</ResponseField>
+
+### balance
+
+Returns the current account balance.
+
+```java
+Money balance()
+```
+
+<ResponseField name="Money" type="Money">
+  Current balance reflecting all entries
+</ResponseField>
+
+**Note:** Balance is calculated by summing all entry amounts. Credits add positive amounts, debits add negative amounts.
+
+### version
+
+Returns the version for optimistic locking.
+
+```java
+Version version()
+```
+
+<ResponseField name="Version" type="Version">
+  Current version number for concurrency control
+</ResponseField>
+
+### entries
+
+Returns a copy of the account's entries.
+
+```java
+Entries entries()
+```
+
+<ResponseField name="Entries" type="Entries">
+  Copy of new entries added to this account (not all historical entries when loaded from database)
+</ResponseField>
+
+**Implementation Note:** To avoid loading all historical entries when retrieving accounts from the database, only new entries added during the current session are tracked in memory. Historical queries should use `AccountView` through `AccountingFacade`.
+
+## Methods
+
+### addEntry
+
+Adds a single entry to the account and updates the balance.
+
+```java
+void addEntry(Entry entry)
+```
+
+<ParamField path="entry" type="Entry" required>
+  The entry to add (AccountCredited or AccountDebited)
+</ParamField>
+
+**Side Effects:**
+- Updates the account balance
+- Records a pending domain event (CreditEntryRegistered or DebitEntryRegistered)
+- Adds entry to the newEntries collection
+
+### addEntries
+
+Adds multiple entries to the account and updates the balance.
+
+```java
+void addEntries(List<Entry> newEntries)
+```
+
+<ParamField path="newEntries" type="List<Entry>" required>
+  List of entries to add
+</ParamField>
+
+**Side Effects:**
+- Updates the account balance for each entry
+- Records pending domain events for each entry
+- Adds all entries to the newEntries collection
+
+## Event Management
+
+### getPendingEvents
+
+Retrieves domain events pending publication.
+
+```java
+List<AccountingEvent> getPendingEvents()
+```
+
+<ResponseField name="List" type="List<AccountingEvent>">
+  Immutable copy of pending events (CreditEntryRegistered, DebitEntryRegistered)
+</ResponseField>
+
+### clearPendingEvents
+
+Clears all pending events after publication.
+
+```java
+void clearPendingEvents()
+```
+
+**Usage:** Called by `AccountingFacade` after successfully publishing events.
+
+## Account Types
+
+The `AccountType` enum defines the classification and behavior of accounts:
+
+```java
+public enum AccountType {
+    ASSET(true),
+    OFF_BALANCE(false),
+    EXPENSE(true),
+    LIABILITY(true),
+    REVENUE(true)
+}
+```
+
+### ASSET
+
+Represents owned economic resources with future value.
+
+<ParamField path="doubleEntryBookingEnabled" type="boolean">
+  `true` - Must balance in transactions
+</ParamField>
+
+**Examples:** Cash, accounts receivable, inventory
+
+### LIABILITY
+
+Represents obligations or debts owed by the entity.
+
+<ParamField path="doubleEntryBookingEnabled" type="boolean">
+  `true` - Must balance in transactions
+</ParamField>
+
+**Examples:** Accounts payable, loans, accrued expenses
+
+### REVENUE
+
+Represents inflows from sales, services, or income-generating activities.
+
+<ParamField path="doubleEntryBookingEnabled" type="boolean">
+  `true` - Must balance in transactions
+</ParamField>
+
+**Examples:** Sales revenue, service fees, interest income
+
+### EXPENSE
+
+Represents outflows for operations, costs, or losses.
+
+<ParamField path="doubleEntryBookingEnabled" type="boolean">
+  `true` - Must balance in transactions
+</ParamField>
+
+**Examples:** Operational costs, write-offs, penalties, losses
+
+### OFF_BALANCE
+
+Represents tracking accounts that don't affect financial statements.
+
+<ParamField path="doubleEntryBookingEnabled" type="boolean">
+  `false` - Does not require balancing in transactions
+</ParamField>
+
+**Examples:** Collateral tracking, guarantees, projected values
+
+## Related Types
+
+### AccountId
+
+```java
+public record AccountId(UUID uuid) {
+    public static AccountId generate()
+    public static AccountId of(UUID uuid)
+}
+```
+
+### AccountName
+
+Value object wrapping the account name string.
+
+### AccountView
+
+Read model for querying account data:
+
+```java
+public record AccountView(
+    AccountId id,
+    String name,
+    String type,
+    Money balance,
+    List<EntryView> entries
+) {
+    Money balanceAsOf(Instant time)
+}
+```
+
+**Usage:** Use `AccountingFacade.findAccount()` to retrieve complete account information including all historical entries.
+
+## Example Usage
+
+### Creating an Account
+
+```java
+// Through AccountingFacade
+CreateAccount request = CreateAccount.generateAssetAccount(
+    AccountId.generate(),
+    "Customer Receivables"
+);
+Result<String, AccountId> result = facade.createAccount(request);
+```
+
+### Querying Account Details
+
+```java
+// Get current balance
+Optional<Money> balance = facade.balance(accountId);
+
+// Get complete account view
+Optional<AccountView> accountView = facade.findAccount(accountId);
+accountView.ifPresent(view -> {
+    System.out.println("Account: " + view.name());
+    System.out.println("Balance: " + view.balance());
+    System.out.println("Entries: " + view.entries().size());
+});
+
+// Get historical balance
+Instant lastYear = Instant.now().minus(365, ChronoUnit.DAYS);
+Optional<Money> historicalBalance = facade.balanceAsOf(accountId, lastYear);
+```
+
+## Concurrency and Locking
+
+Accounts use optimistic locking through the `Version` field. When multiple transactions attempt to update the same account concurrently:
+
+1. Each transaction reads the account with its current version
+2. The transaction adds entries and executes
+3. When saving, the repository checks if the version has changed
+4. If the version changed, the transaction fails and must retry
+
+This ensures consistency without pessimistic locks.
+
+## Related Classes
+
+- [AccountingFacade](/api/accounting/facade) - Main interface for account operations
+- [Transaction](/api/accounting/transaction) - Updates accounts through entries
+- [Entry](/api/accounting/entry) - Individual debit/credit entries

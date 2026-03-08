@@ -1,0 +1,292 @@
+---
+title: Quantity
+description: A value object representing an amount with a unit of measurement
+---
+
+## Overview
+
+`Quantity` is a record class that represents an amount with a unit of measurement. It provides type-safe operations for working with quantities and ensures that operations are only performed on compatible units.
+
+**Package:** `com.softwarearchetypes.quantity`
+
+**Examples:** 100 kg, 500 liters, 1000 pieces, 25.5 m²
+
+## Constructor
+
+<ParamField body="amount" type="BigDecimal" required>
+  The numeric amount of the quantity. Must not be null and cannot be negative.
+</ParamField>
+
+<ParamField body="unit" type="Unit" required>
+  The unit of measurement. Must not be null.
+</ParamField>
+
+### Validation Rules
+
+- Amount cannot be null
+- Unit cannot be null  
+- Amount must be greater than or equal to zero
+- Zero amounts are allowed
+
+## Factory Methods
+
+### of(BigDecimal, Unit)
+
+Creates a Quantity from a BigDecimal amount and unit.
+
+<ParamField path="amount" type="BigDecimal" required>
+  The amount as a BigDecimal
+</ParamField>
+
+<ParamField path="unit" type="Unit" required>
+  The unit of measurement
+</ParamField>
+
+<ResponseField name="return" type="Quantity">
+  A new Quantity instance
+</ResponseField>
+
+```java
+BigDecimal amount = new BigDecimal("100.5");
+Unit unit = Unit.kilograms();
+Quantity quantity = Quantity.of(amount, unit);
+// Result: 100.5 kg
+```
+
+### of(double, Unit)
+
+Creates a Quantity from a double amount and unit.
+
+<ParamField path="amount" type="double" required>
+  The amount as a double
+</ParamField>
+
+<ParamField path="unit" type="Unit" required>
+  The unit of measurement
+</ParamField>
+
+<ResponseField name="return" type="Quantity">
+  A new Quantity instance
+</ResponseField>
+
+```java
+Quantity quantity = Quantity.of(50.75, Unit.liters());
+// Result: 50.75 l
+```
+
+### of(int, Unit)
+
+Creates a Quantity from an integer amount and unit.
+
+<ParamField path="amount" type="int" required>
+  The amount as an integer
+</ParamField>
+
+<ParamField path="unit" type="Unit" required>
+  The unit of measurement
+</ParamField>
+
+<ResponseField name="return" type="Quantity">
+  A new Quantity instance
+</ResponseField>
+
+```java
+Quantity quantity = Quantity.of(1000, Unit.pieces());
+// Result: 1000 pcs
+```
+
+## Instance Methods
+
+### amount()
+
+Returns the numeric amount of the quantity.
+
+<ResponseField name="return" type="BigDecimal">
+  The amount as a BigDecimal
+</ResponseField>
+
+```java
+Quantity quantity = Quantity.of(100.5, Unit.kilograms());
+BigDecimal amount = quantity.amount();
+// Result: 100.5
+```
+
+### unit()
+
+Returns the unit of measurement.
+
+<ResponseField name="return" type="Unit">
+  The unit of measurement
+</ResponseField>
+
+```java
+Quantity quantity = Quantity.of(100, Unit.kilograms());
+Unit unit = quantity.unit();
+// Result: Unit(symbol="kg", name="kilograms")
+```
+
+### add(Quantity)
+
+Adds another quantity to this quantity. Both quantities must have the same unit.
+
+<ParamField path="other" type="Quantity" required>
+  The quantity to add. Must have the same unit as this quantity.
+</ParamField>
+
+<ResponseField name="return" type="Quantity">
+  A new Quantity with the sum of both amounts
+</ResponseField>
+
+<ResponseField name="throws" type="IllegalArgumentException">
+  If the units are different
+</ResponseField>
+
+```java
+Quantity first = Quantity.of(100, Unit.kilograms());
+Quantity second = Quantity.of(50, Unit.kilograms());
+Quantity result = first.add(second);
+// Result: 150 kg
+
+// This will throw IllegalArgumentException:
+Quantity kg = Quantity.of(100, Unit.kilograms());
+Quantity liters = Quantity.of(50, Unit.liters());
+kg.add(liters); // Error: Cannot add quantities with different units
+```
+
+### subtract(Quantity)
+
+Subtracts another quantity from this quantity. Both quantities must have the same unit.
+
+<ParamField path="other" type="Quantity" required>
+  The quantity to subtract. Must have the same unit as this quantity.
+</ParamField>
+
+<ResponseField name="return" type="Quantity">
+  A new Quantity with the difference of both amounts
+</ResponseField>
+
+<ResponseField name="throws" type="IllegalArgumentException">
+  If the units are different or if the result would be negative
+</ResponseField>
+
+```java
+Quantity first = Quantity.of(100, Unit.kilograms());
+Quantity second = Quantity.of(30, Unit.kilograms());
+Quantity result = first.subtract(second);
+// Result: 70 kg
+
+// This will throw IllegalArgumentException (result would be negative):
+Quantity small = Quantity.of(50, Unit.pieces());
+Quantity large = Quantity.of(100, Unit.pieces());
+small.subtract(large); // Error: Amount cannot be negative
+```
+
+### toString()
+
+Returns a string representation of the quantity.
+
+<ResponseField name="return" type="String">
+  Format: "amount unit.symbol"
+</ResponseField>
+
+```java
+Quantity quantity = Quantity.of(100.5, Unit.kilograms());
+String str = quantity.toString();
+// Result: "100.5 kg"
+
+Quantity sqm = Quantity.of(25.5, Unit.squareMeters());
+String str2 = sqm.toString();
+// Result: "25.5 m²"
+```
+
+### compareTo(Quantity)
+
+Compares this quantity to another quantity. Implements `Comparable<Quantity>`.
+
+<ParamField path="o" type="Quantity" required>
+  The quantity to compare to
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Currently always returns 0 (implementation incomplete)
+</ResponseField>
+
+<Note>
+  The current implementation of `compareTo` is a stub that always returns 0. This should be implemented to properly compare quantities with the same unit.
+</Note>
+
+## Immutability
+
+Quantity is immutable. All operations return new instances:
+
+```java
+Quantity original = Quantity.of(100, Unit.kilograms());
+Quantity toAdd = Quantity.of(50, Unit.kilograms());
+Quantity result = original.add(toAdd);
+
+// original is unchanged
+assertEquals(new BigDecimal("100"), original.amount());
+// result is a new instance
+assertEquals(new BigDecimal("150"), result.amount());
+assertNotSame(original, result);
+```
+
+## Precision
+
+Quantity uses `BigDecimal` internally, preserving full precision:
+
+```java
+Quantity first = Quantity.of(new BigDecimal("10.123456789"), Unit.meters());
+Quantity second = Quantity.of(new BigDecimal("5.987654321"), Unit.meters());
+
+Quantity sum = first.add(second);
+// Result: 16.111111110 m (full precision preserved)
+
+Quantity diff = first.subtract(second);
+// Result: 4.135802468 m (full precision preserved)
+```
+
+## Working with Custom Units
+
+```java
+// Create a custom unit
+Unit widget = Unit.of("widget", "widgets");
+
+// Use it with Quantity
+Quantity quantity = Quantity.of(42, widget);
+System.out.println(quantity); // Output: "42 widget"
+```
+
+## Common Use Cases
+
+### Inventory Management
+
+```java
+Quantity stock = Quantity.of(1000, Unit.pieces());
+Quantity sold = Quantity.of(150, Unit.pieces());
+Quantity remaining = stock.subtract(sold);
+// Result: 850 pcs
+```
+
+### Material Calculations
+
+```java
+Quantity material1 = Quantity.of(50.5, Unit.kilograms());
+Quantity material2 = Quantity.of(25.75, Unit.kilograms());
+Quantity total = material1.add(material2);
+// Result: 76.25 kg
+```
+
+### Area Calculations
+
+```java
+Quantity room1 = Quantity.of(25.5, Unit.squareMeters());
+Quantity room2 = Quantity.of(18.3, Unit.squareMeters());
+Quantity totalArea = room1.add(room2);
+// Result: 43.8 m²
+```
+
+## Related Types
+
+- [Unit](/api/quantity/unit) - Unit of measurement
+- [Money](/api/quantity/money) - Monetary amounts with currency

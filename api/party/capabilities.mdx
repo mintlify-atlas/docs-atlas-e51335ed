@@ -1,0 +1,510 @@
+---
+title: "Capabilities"
+description: "Represents what a party can do with operating scopes and validity"
+---
+
+## Overview
+
+`Capability` represents what a specific party can do, constrained by operating scopes and validity period. Each capability is assigned to exactly one party.
+
+**Package:** `com.softwarearchetypes.party`
+
+**Source:** `/party/src/main/java/com/softwarearchetypes/party/Capability.java:20`
+
+## Use Cases
+
+**Medical:**
+- Dr. Smith has MedicalImaging capability at Hospital A, working hours, max 20 scans/day, valid until 2025
+
+**Logistics:**
+- FastLogistics company has GoodsDelivery capability for Warsaw region with ADR certification, valid until 2026
+
+**Software:**
+- Backend Team has SoftwareDevelopment capability for API Gateway at Senior level, always valid
+
+## Constructor
+
+```java
+private Capability(CapabilityId id,
+                  PartyId partyId,
+                  CapabilityType type,
+                  List<OperatingScope> scopes,
+                  Validity validity)
+```
+
+Use `Capability.forParty(partyId)` to create instances via builder.
+
+<ParamField path="id" type="CapabilityId" required>
+  Unique capability identifier
+</ParamField>
+
+<ParamField path="partyId" type="PartyId" required>
+  The party who has this capability
+</ParamField>
+
+<ParamField path="type" type="CapabilityType" required>
+  Type of capability
+</ParamField>
+
+<ParamField path="scopes" type="List<OperatingScope>" required>
+  Operating scopes that constrain this capability
+</ParamField>
+
+<ParamField path="validity" type="Validity" required>
+  When this capability is valid
+</ParamField>
+
+## Builder Pattern
+
+### forParty
+
+```java
+static Builder forParty(PartyId partyId)
+```
+
+Creates a builder for a specific party.
+
+<ParamField path="partyId" type="PartyId" required>
+  The party identifier
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  A new Builder instance
+</ResponseField>
+
+**Example:**
+```java
+Capability capability = Capability.forParty(doctorId)
+    .type(CapabilityType.of("MedicalImaging"))
+    .withScope(new LocationScope("Hospital A"))
+    .withScope(new TimeScope("09:00-17:00"))
+    .withScope(new QuotaScope(20, "scans per day"))
+    .validUntil(Instant.parse("2025-12-31T23:59:59Z"))
+    .build();
+```
+
+## Accessor Methods
+
+### id
+
+```java
+CapabilityId id()
+```
+
+Returns the capability identifier.
+
+<ResponseField name="return" type="CapabilityId">
+  The capability ID
+</ResponseField>
+
+### partyId
+
+```java
+PartyId partyId()
+```
+
+Returns the party identifier.
+
+<ResponseField name="return" type="PartyId">
+  The party who has this capability
+</ResponseField>
+
+### type
+
+```java
+CapabilityType type()
+```
+
+Returns the capability type.
+
+<ResponseField name="return" type="CapabilityType">
+  The capability type
+</ResponseField>
+
+### scopes
+
+```java
+List<OperatingScope> scopes()
+```
+
+Returns the operating scopes.
+
+<ResponseField name="return" type="List<OperatingScope>">
+  Immutable list of operating scopes
+</ResponseField>
+
+### validity
+
+```java
+Validity validity()
+```
+
+Returns the validity period.
+
+<ResponseField name="return" type="Validity">
+  When this capability is valid
+</ResponseField>
+
+## Validation Methods
+
+### isCurrentlyValid
+
+```java
+boolean isCurrentlyValid()
+```
+
+Checks if the capability is currently valid.
+
+<ResponseField name="return" type="boolean">
+  `true` if valid at current time, `false` otherwise
+</ResponseField>
+
+### isValidAt
+
+```java
+boolean isValidAt(Instant instant)
+```
+
+Checks if the capability is valid at a specific instant.
+
+<ParamField path="instant" type="Instant" required>
+  The instant to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if valid at the given instant, `false` otherwise
+</ResponseField>
+
+## Scope Queries
+
+### scope
+
+```java
+<T extends OperatingScope> Optional<T> scope(Class<T> scopeClass)
+```
+
+Finds a scope of a specific type.
+
+<ParamField path="scopeClass" type="Class<T>" required>
+  The scope class to search for
+</ParamField>
+
+<ResponseField name="return" type="Optional<T>">
+  The first scope of the given type, or empty if not found
+</ResponseField>
+
+**Example:**
+```java
+Optional<LocationScope> location = capability.scope(LocationScope.class);
+if (location.isPresent()) {
+    System.out.println("Location: " + location.get().getLocation());
+}
+```
+
+### hasScope
+
+```java
+boolean hasScope(Class<? extends OperatingScope> scopeClass)
+```
+
+Checks if the capability has a scope of a specific type.
+
+<ParamField path="scopeClass" type="Class<? extends OperatingScope>" required>
+  The scope class to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if has scope of this type, `false` otherwise
+</ResponseField>
+
+## Requirement Checking
+
+### satisfies
+
+```java
+boolean satisfies(CapabilityRequirement requirement)
+```
+
+Checks if this capability satisfies a requirement. The capability must:
+- Be currently valid
+- Have the same type as required
+- All scopes must satisfy the requirement's scope requirements
+
+<ParamField path="requirement" type="CapabilityRequirement" required>
+  The requirement to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if requirement is satisfied, `false` otherwise
+</ResponseField>
+
+**Example:**
+```java
+CapabilityRequirement requirement = CapabilityRequirement.builder()
+    .requiredType(CapabilityType.of("MedicalImaging"))
+    .requireScope(new LocationScope("Hospital A"))
+    .build();
+
+if (capability.satisfies(requirement)) {
+    // Capability meets the requirement
+}
+```
+
+### satisfiesAt
+
+```java
+boolean satisfiesAt(CapabilityRequirement requirement, Instant at)
+```
+
+Checks if this capability satisfies a requirement at a specific instant.
+
+<ParamField path="requirement" type="CapabilityRequirement" required>
+  The requirement to check
+</ParamField>
+
+<ParamField path="at" type="Instant" required>
+  The instant to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if requirement is satisfied at the given instant, `false` otherwise
+</ResponseField>
+
+## Builder Methods
+
+The `Builder` class provides a fluent interface for constructing `Capability` instances.
+
+### type
+
+```java
+Builder type(CapabilityType type)
+```
+
+Sets the capability type.
+
+<ParamField path="type" type="CapabilityType" required>
+  The capability type
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+```java
+Builder type(String typeName)
+```
+
+Sets the capability type by name.
+
+<ParamField path="typeName" type="String" required>
+  The capability type name
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### withScope
+
+```java
+Builder withScope(OperatingScope scope)
+```
+
+Adds an operating scope.
+
+<ParamField path="scope" type="OperatingScope" required>
+  The scope to add
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### validUntil
+
+```java
+Builder validUntil(Instant validTo)
+```
+
+Sets validity from now until specified time.
+
+<ParamField path="validTo" type="Instant" required>
+  The end of validity
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### validFrom
+
+```java
+Builder validFrom(Instant validFrom)
+```
+
+Sets validity from specified time indefinitely.
+
+<ParamField path="validFrom" type="Instant" required>
+  The start of validity
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### validBetween
+
+```java
+Builder validBetween(Instant validFrom, Instant validTo)
+```
+
+Sets validity for a specific time range.
+
+<ParamField path="validFrom" type="Instant" required>
+  The start of validity
+</ParamField>
+
+<ParamField path="validTo" type="Instant" required>
+  The end of validity
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### validity
+
+```java
+Builder validity(Validity validity)
+```
+
+Sets the validity directly.
+
+<ParamField path="validity" type="Validity" required>
+  The validity period
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### build
+
+```java
+Capability build()
+```
+
+Builds the Capability instance.
+
+<ResponseField name="return" type="Capability">
+  The constructed Capability
+</ResponseField>
+
+**Throws:** `IllegalArgumentException` if capability type is not set.
+
+## Complete Usage Example
+
+```java
+// Doctor with medical imaging capability
+Capability imagingCapability = Capability.forParty(doctorId)
+    .type("MedicalImaging")
+    .withScope(new LocationScope("Hospital A"))
+    .withScope(new TimeScope("09:00-17:00", "Mon-Fri"))
+    .withScope(new QuotaScope(20, "scans per day"))
+    .validBetween(
+        Instant.parse("2024-01-01T00:00:00Z"),
+        Instant.parse("2024-12-31T23:59:59Z")
+    )
+    .build();
+
+// Check validity
+assert imagingCapability.isCurrentlyValid();
+
+// Check scopes
+assert imagingCapability.hasScope(LocationScope.class);
+assert imagingCapability.hasScope(TimeScope.class);
+
+Optional<LocationScope> location = imagingCapability.scope(LocationScope.class);
+assert location.isPresent();
+assert location.get().getLocation().equals("Hospital A");
+
+// Check if capability satisfies a requirement
+CapabilityRequirement requirement = CapabilityRequirement.builder()
+    .requiredType(CapabilityType.of("MedicalImaging"))
+    .requireScope(new LocationScope("Hospital A"))
+    .build();
+
+assert imagingCapability.satisfies(requirement);
+
+// Logistics company with delivery capability
+Capability deliveryCapability = Capability.forParty(companyId)
+    .type("GoodsDelivery")
+    .withScope(new GeographicScope("Warsaw", "Poland"))
+    .withScope(new CertificationScope("ADR")) // Hazardous materials
+    .withScope(new WeightScope(0, 3500, "kg"))
+    .validUntil(Instant.parse("2026-12-31T23:59:59Z"))
+    .build();
+
+assert deliveryCapability.isCurrentlyValid();
+```
+
+## CapabilitiesFacade
+
+The `CapabilitiesFacade` provides high-level operations for managing capabilities.
+
+**Package:** `com.softwarearchetypes.party`
+
+**Source:** `/party/src/main/java/com/softwarearchetypes/party/CapabilitiesFacade.java:10`
+
+### handle (AddCapabilityCommand)
+
+```java
+Result<String, CapabilityView> handle(AddCapabilityCommand command)
+```
+
+Adds a capability to a party.
+
+<ParamField path="command" type="AddCapabilityCommand" required>
+  Command containing party ID, capability type, scopes, and validity
+</ParamField>
+
+<ResponseField name="return" type="Result<String, CapabilityView>">
+  Success with capability view, or failure with "PARTY_NOT_FOUND"
+</ResponseField>
+
+### handle (RemoveCapabilityCommand)
+
+```java
+Result<String, CapabilityId> handle(RemoveCapabilityCommand command)
+```
+
+Removes a capability.
+
+<ParamField path="command" type="RemoveCapabilityCommand" required>
+  Command containing capability ID to remove
+</ParamField>
+
+<ResponseField name="return" type="Result<String, CapabilityId>">
+  Success with capability ID, or failure with "CAPABILITY_NOT_FOUND"
+</ResponseField>
+
+**Example:**
+```java
+CapabilitiesFacade facade = // ... injected
+
+AddCapabilityCommand command = new AddCapabilityCommand(
+    partyId,
+    CapabilityType.of("MedicalImaging"),
+    List.of(new LocationScope("Hospital A")),
+    Validity.until(Instant.parse("2025-12-31T23:59:59Z"))
+);
+
+Result<String, CapabilityView> result = facade.handle(command);
+
+if (result.success()) {
+    CapabilityView view = result.getSuccess();
+    System.out.println("Added capability: " + view.id());
+} else {
+    System.out.println("Failed: " + result.getFailure());
+}
+```

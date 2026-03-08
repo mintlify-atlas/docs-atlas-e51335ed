@@ -1,0 +1,549 @@
+---
+title: "InventoryEntry"
+description: "Aggregate root mapping products to instances and resources"
+---
+
+## Overview
+
+`InventoryEntry` is the aggregate root that maps a product to its instances and resources. It manages the relationship between product instances and availability resources.
+
+**Package:** `com.softwarearchetypes.inventory`
+
+**Source:** `/inventory/src/main/java/com/softwarearchetypes/inventory/InventoryEntry.java:34`
+
+## Responsibilities
+
+- **Instance management**: Track all instances of a product
+- **Resource mapping**: Map instances to availability resources
+- **Lock handling**: Delegate lock operations to availability facade
+- **Version control**: Optimistic locking support
+
+## Structure
+
+- `instances`: Set of all InstanceIds belonging to this entry
+- `instanceToResource`: Maps instances to resources for availability tracking
+
+**Note:** Not all instances need a resource mapping (e.g., instances not yet made available). Actual availability is managed by AvailabilityFacade.
+
+## Constructor
+
+```java
+InventoryEntry(InventoryEntryId id,
+              InventoryProduct product,
+              Set<InstanceId> instances,
+              Map<InstanceId, ResourceId> instanceToResource,
+              AvailabilityFacade availabilityFacade,
+              Version version)
+```
+
+<ParamField path="id" type="InventoryEntryId" required>
+  Unique inventory entry identifier
+</ParamField>
+
+<ParamField path="product" type="InventoryProduct" required>
+  The product this entry manages
+</ParamField>
+
+<ParamField path="instances" type="Set<InstanceId>">
+  Set of instance IDs (defaults to empty)
+</ParamField>
+
+<ParamField path="instanceToResource" type="Map<InstanceId, ResourceId>">
+  Instance-to-resource mapping (defaults to empty)
+</ParamField>
+
+<ParamField path="availabilityFacade" type="AvailabilityFacade" required>
+  Facade for managing availability
+</ParamField>
+
+<ParamField path="version" type="Version" required>
+  Version for optimistic locking
+</ParamField>
+
+## Factory Method
+
+### create
+
+```java
+static InventoryEntry create(InventoryProduct product,
+                             AvailabilityFacade availabilityFacade)
+```
+
+Creates a new empty inventory entry.
+
+<ParamField path="product" type="InventoryProduct" required>
+  The product
+</ParamField>
+
+<ParamField path="availabilityFacade" type="AvailabilityFacade" required>
+  Availability facade
+</ParamField>
+
+<ResponseField name="return" type="InventoryEntry">
+  New inventory entry with initial version
+</ResponseField>
+
+**Example:**
+```java
+InventoryProduct product = // ... product definition
+AvailabilityFacade availabilityFacade = // ... injected
+
+InventoryEntry entry = InventoryEntry.create(product, availabilityFacade);
+assert entry.isEmpty();
+```
+
+## Accessor Methods
+
+### id
+
+```java
+InventoryEntryId id()
+```
+
+Returns the inventory entry identifier.
+
+<ResponseField name="return" type="InventoryEntryId">
+  The inventory entry ID
+</ResponseField>
+
+### product
+
+```java
+InventoryProduct product()
+```
+
+Returns the product.
+
+<ResponseField name="return" type="InventoryProduct">
+  The inventory product
+</ResponseField>
+
+### productId
+
+```java
+ProductIdentifier productId()
+```
+
+Returns the product identifier.
+
+<ResponseField name="return" type="ProductIdentifier">
+  The product identifier
+</ResponseField>
+
+### instances
+
+```java
+Set<InstanceId> instances()
+```
+
+Returns all instance IDs.
+
+<ResponseField name="return" type="Set<InstanceId>">
+  Immutable set of instance IDs
+</ResponseField>
+
+### instanceCount
+
+```java
+int instanceCount()
+```
+
+Returns the number of instances.
+
+<ResponseField name="return" type="int">
+  Instance count
+</ResponseField>
+
+### isEmpty
+
+```java
+boolean isEmpty()
+```
+
+Checks if this entry has no instances.
+
+<ResponseField name="return" type="boolean">
+  `true` if no instances, `false` otherwise
+</ResponseField>
+
+### version
+
+```java
+Version version()
+```
+
+Returns the version for optimistic locking.
+
+<ResponseField name="return" type="Version">
+  The version
+</ResponseField>
+
+## Instance Management
+
+### addInstance
+
+```java
+void addInstance(Instance instance)
+```
+
+Adds an instance to this entry.
+
+<ParamField path="instance" type="Instance" required>
+  The instance to add
+</ParamField>
+
+**Example:**
+```java
+Instance phone = ProductInstance.builder()
+    .productId(entry.productId())
+    .serialNumber(new ImeiSerialNumber("123456789012345"))
+    .build();
+
+entry.addInstance(phone);
+assert entry.hasInstance(phone.id());
+```
+
+### removeInstance
+
+```java
+void removeInstance(InstanceId instanceId)
+```
+
+Removes an instance and its resource mapping if any.
+
+<ParamField path="instanceId" type="InstanceId" required>
+  The instance ID to remove
+</ParamField>
+
+### hasInstance
+
+```java
+boolean hasInstance(InstanceId instanceId)
+```
+
+Checks if an instance exists in this entry.
+
+<ParamField path="instanceId" type="InstanceId" required>
+  The instance ID to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if instance exists, `false` otherwise
+</ResponseField>
+
+## Resource Mapping
+
+### mapInstanceToResource
+
+```java
+void mapInstanceToResource(InstanceId instanceId, ResourceId resourceId)
+```
+
+Maps an instance to an availability resource. If the instance doesn't exist, it will be added.
+
+<ParamField path="instanceId" type="InstanceId" required>
+  The instance ID
+</ParamField>
+
+<ParamField path="resourceId" type="ResourceId" required>
+  The resource ID
+</ParamField>
+
+**Example:**
+```java
+// Map phone instance to individual resource
+entry.mapInstanceToResource(phoneInstanceId, ResourceId.of("RES-PHONE-001"));
+
+// Map milk batch instance to pool resource
+entry.mapInstanceToResource(milkInstanceId, ResourceId.of("RES-MILK-POOL"));
+```
+
+### unmapInstanceFromResource
+
+```java
+void unmapInstanceFromResource(InstanceId instanceId)
+```
+
+Removes the resource mapping for an instance.
+
+<ParamField path="instanceId" type="InstanceId" required>
+  The instance ID
+</ParamField>
+
+### resourceFor
+
+```java
+Optional<ResourceId> resourceFor(InstanceId instanceId)
+```
+
+Finds the resource mapped to an instance.
+
+<ParamField path="instanceId" type="InstanceId" required>
+  The instance ID
+</ParamField>
+
+<ResponseField name="return" type="Optional<ResourceId>">
+  The resource ID if mapped, empty otherwise
+</ResponseField>
+
+### instanceFor
+
+```java
+Optional<InstanceId> instanceFor(ResourceId resourceId)
+```
+
+Finds the instance mapped to a resource.
+
+<ParamField path="resourceId" type="ResourceId" required>
+  The resource ID
+</ParamField>
+
+<ResponseField name="return" type="Optional<InstanceId>">
+  The instance ID if mapped, empty otherwise
+</ResponseField>
+
+### instanceToResourceMap
+
+```java
+Map<InstanceId, ResourceId> instanceToResourceMap()
+```
+
+Returns the complete instance-to-resource mapping.
+
+<ResponseField name="return" type="Map<InstanceId, ResourceId>">
+  Immutable map of instance to resource mappings
+</ResponseField>
+
+### resourceIds
+
+```java
+List<ResourceId> resourceIds()
+```
+
+Returns all resource IDs.
+
+<ResponseField name="return" type="List<ResourceId>">
+  List of resource IDs
+</ResponseField>
+
+### hasResource
+
+```java
+boolean hasResource(ResourceId resourceId)
+```
+
+Checks if a resource is mapped to any instance.
+
+<ParamField path="resourceId" type="ResourceId" required>
+  The resource ID to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if resource is mapped, `false` otherwise
+</ResponseField>
+
+## Lock Handling
+
+### handle
+
+```java
+Result<String, List<BlockadeId>> handle(LockCommand cmd)
+```
+
+Handles a lock command by delegating to the appropriate handler based on resource specification.
+
+<ParamField path="cmd" type="LockCommand" required>
+  The lock command containing product ID, quantity, owner, and resource specification
+</ParamField>
+
+<ResponseField name="return" type="Result<String, List<BlockadeId>>">
+  Success with list of blockade IDs, or failure with error message
+</ResponseField>
+
+**Supported resource specifications:**
+- `TemporalSpecification`: For time-based resources (hotel rooms, appointment slots)
+- `IndividualSpecification`: For specific instances (rental car, unique equipment)
+- `QuantitySpecification`: For pool resources (fuel, milk, bulk goods)
+
+**Example:**
+```java
+// Lock a hotel room for 3 nights
+LockCommand hotelCmd = LockCommand.builder()
+    .productId(hotelRoomProductId)
+    .owner(OwnerId.of("RESERVATION-123"))
+    .resourceSpecification(
+        ResourceSpecification.temporal(
+            TimeSlot.of(LocalDate.of(2024, 3, 10), LocalDate.of(2024, 3, 11)),
+            TimeSlot.of(LocalDate.of(2024, 3, 11), LocalDate.of(2024, 3, 12)),
+            TimeSlot.of(LocalDate, 3, 12), LocalDate.of(2024, 3, 13))
+        )
+    )
+    .build();
+
+Result<String, List<BlockadeId>> result = entry.handle(hotelCmd);
+
+if (result.success()) {
+    List<BlockadeId> blockades = result.getSuccess();
+    // Successfully locked for 3 nights
+} else {
+    System.out.println("Lock failed: " + result.getFailure());
+}
+
+// Lock a specific rental car
+LockCommand carCmd = LockCommand.builder()
+    .productId(carProductId)
+    .owner(OwnerId.of("RENTAL-456"))
+    .resourceSpecification(
+        ResourceSpecification.individual(carInstanceId)
+    )
+    .build();
+
+result = entry.handle(carCmd);
+
+// Lock quantity of fuel
+LockCommand fuelCmd = LockCommand.builder()
+    .productId(fuelProductId)
+    .quantity(Quantity.of(50, Unit.liters()))
+    .owner(OwnerId.of("ORDER-789"))
+    .resourceSpecification(
+        ResourceSpecification.quantity()
+    )
+    .build();
+
+result = entry.handle(fuelCmd);
+```
+
+## Lock Strategies
+
+### Temporal Lock
+
+Used for time-slotted resources like hotel rooms, meeting rooms, or appointment slots.
+
+**Current implementation:** Takes first available resource.
+
+**Alternative strategies:**
+- Find resource available for all slots
+- Use customer preference
+- Load balancing
+
+**Rollback:** If locking fails midway, previously locked slots are automatically released.
+
+### Individual Lock
+
+Used for specific, uniquely identifiable items.
+
+**Example:** Renting a specific car with VIN ABC123.
+
+### Quantity Lock
+
+Used for pool resources where specific identity doesn't matter.
+
+**Examples:** Fuel, milk, bulk chemicals.
+
+**Current implementation:** Takes first pool resource.
+
+**Alternative strategies:**
+- Distribute across multiple pools
+- FIFO allocation
+- Geographic proximity
+
+## Complete Usage Example
+
+```java
+// Create inventory entry for hotel rooms
+InventoryProduct hotelRoom = InventoryProduct.builder()
+    .productId(hotelRoomProductId)
+    .trackingStrategy(ProductTrackingStrategy.TEMPORAL)
+    .build();
+
+InventoryEntry entry = InventoryEntry.create(hotelRoom, availabilityFacade);
+
+// Add room instances
+Instance room101 = ProductInstance.builder()
+    .productId(hotelRoomProductId)
+    .serialNumber(new TextualSerialNumber("ROOM-101"))
+    .build();
+
+Instance room102 = ProductInstance.builder()
+    .productId(hotelRoomProductId)
+    .serialNumber(new TextualSerialNumber("ROOM-102"))
+    .build();
+
+entry.addInstance(room101);
+entry.addInstance(room102);
+
+assert entry.instanceCount() == 2;
+
+// Map instances to temporal resources
+ResourceId resource101 = ResourceId.of("TEMPORAL-ROOM-101");
+ResourceId resource102 = ResourceId.of("TEMPORAL-ROOM-102");
+
+entry.mapInstanceToResource(room101.id(), resource101);
+entry.mapInstanceToResource(room102.id(), resource102);
+
+// Lock a room for 2 nights
+LockCommand cmd = LockCommand.builder()
+    .productId(hotelRoomProductId)
+    .owner(OwnerId.of("RESERVATION-123"))
+    .resourceSpecification(
+        ResourceSpecification.temporal(
+            TimeSlot.of(LocalDate.of(2024, 3, 10), LocalDate.of(2024, 3, 11)),
+            TimeSlot.of(LocalDate.of(2024, 3, 11), LocalDate.of(2024, 3, 12))
+        )
+    )
+    .build();
+
+Result<String, List<BlockadeId>> result = entry.handle(cmd);
+
+if (result.success()) {
+    List<BlockadeId> blockades = result.getSuccess();
+    System.out.println("Locked " + blockades.size() + " time slots");
+    
+    // Later: unlock
+    for (BlockadeId blockade : blockades) {
+        availabilityFacade.handle(
+            UnlockRequest.of(OwnerId.of("RESERVATION-123"), blockade)
+        );
+    }
+}
+
+// Query resource mappings
+Optional<ResourceId> resource = entry.resourceFor(room101.id());
+assert resource.isPresent();
+assert resource.get().equals(resource101);
+
+Optional<InstanceId> instance = entry.instanceFor(resource101);
+assert instance.isPresent();
+assert instance.get().equals(room101.id());
+```
+
+## Error Handling
+
+Lock operations can fail for several reasons:
+
+**"No resources mapped for product"**
+- No instances have been mapped to resources
+- Solution: Map instances to resources first
+
+**"No resource mapped for instance"**
+- Specific instance not mapped to a resource
+- Solution: Map the instance to a resource
+
+**Availability failures**
+- Resource already locked
+- Insufficient quantity
+- Time slot not available
+
+```java
+Result<String, List<BlockadeId>> result = entry.handle(cmd);
+
+if (result.failure()) {
+    String error = result.getFailure();
+    
+    if (error.contains("No resources")) {
+        // Need to map instances to resources
+    } else if (error.contains("already locked")) {
+        // Resource unavailable
+    }
+}
+```

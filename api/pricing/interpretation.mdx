@@ -1,0 +1,489 @@
+---
+title: Interpretation
+description: Semantic meaning of calculated price values in the Pricing module
+---
+
+## Overview
+
+The `Interpretation` enum captures the **semantic meaning** of a calculated price value, not just its numeric result. The same mathematical function can represent different economic concepts depending on its interpretation.
+
+## Why Interpretation Matters
+
+<Info>
+  **Key Insight:** A calculator returning `PLN 100.00` could mean:
+  - **TOTAL**: Total cost for all units
+  - **UNIT**: Average price per single unit
+  - **MARGINAL**: Price of the n-th specific unit
+  
+  The interpretation tells you **what the number means**, not just **what the number is**.
+</Info>
+
+## Enum Definition
+
+```java
+public enum Interpretation {
+    TOTAL,
+    UNIT,
+    MARGINAL
+}
+```
+
+## Interpretation Types
+
+### TOTAL
+
+<ParamField path="TOTAL" type="Interpretation">
+  Total price for the entire quantity or time period.
+
+  **Description:** `"Total price for entire quantity/period"`
+
+  **Mathematical Relations:**
+  - `Total(q) = Σ[i=1→q] Marginal(i)` - Sum of all marginal prices
+  - `Total(q) = UnitAverage(q) × q` - Average unit price times quantity
+
+  **Applicability:**
+  - ✅ Always applicable
+  - ✅ Works for 1D functions (quantity, time)
+  - ✅ Works for multi-dimensional functions (GB × hours × region)
+
+  **Examples:**
+  - "Total cost for 15 items: PLN 140.00"
+  - "Total invoice amount: EUR 1500.00"
+  - "Complete project cost: PLN 50,000.00"
+
+  **Use Cases:**
+  - Order totals
+  - Invoice amounts
+  - Project budgets
+  - Subscription fees
+</ParamField>
+
+### UNIT
+
+<ParamField path="UNIT" type="Interpretation">
+  Average price per single unit.
+
+  **Description:** `"Average price per single unit"`
+
+  **Mathematical Relations:**
+  - `UnitAverage(q) = Total(q) / q` - Total divided by quantity
+
+  **Applicability:**
+  - ⚠️ Only for 1-dimensional functions (quantity, time, weight, etc.)
+  - ❌ Ambiguous for multi-dimensional functions
+
+  **Examples:**
+  - "PLN 10.00 per kilogram"
+  - "PLN 150.00 per hour"
+  - "Average price per item: PLN 9.33"
+  - "EUR 0.05 per kWh"
+
+  **Use Cases:**
+  - Unit pricing labels
+  - Rate cards
+  - Comparative shopping
+  - Per-item costs
+
+  **Why "Average"?**
+  When prices vary by quantity (e.g., volume discounts), the unit price represents the average across all units, not the price of any specific unit.
+</ParamField>
+
+### MARGINAL
+
+<ParamField path="MARGINAL" type="Interpretation">
+  Price of the n-th specific unit (incremental cost/benefit).
+
+  **Description:** `"Price of n-th specific unit"`
+
+  **Mathematical Relations (Discrete):**
+  - `Marginal(n) = Total(n) - Total(n-1)` - Difference between consecutive totals
+
+  **Mathematical Relations (Continuous):**
+  - `Marginal(x) = dTotal/dx` - Derivative of total price
+
+  **Applicability:**
+  - ⚠️ Only for 1-dimensional functions
+  - ❌ Not applicable for multi-dimensional functions
+
+  **Examples:**
+  - "15th item costs PLN 8.00" (bulk discount)
+  - "11th hour costs PLN 120.00" (overtime premium)
+  - "Next GB costs EUR 0.10"
+
+  **Use Cases:**
+  - Marginal analysis ("Should I buy one more?")
+  - Break-even calculations
+  - Optimization decisions
+  - Progressive pricing
+
+  **Economic Significance:**
+  Marginal price answers: "How much will the next unit cost me?"
+</ParamField>
+
+## Interpretation Methods
+
+### describe()
+
+```java
+public String describe()
+```
+
+Returns a human-readable description of the interpretation.
+
+**Returns:**
+- `String` - Description text
+
+**Example:**
+```java
+Interpretation total = Interpretation.TOTAL;
+String desc = total.describe();
+// Returns: "Total price for entire quantity/period"
+
+Interpretation unit = Interpretation.UNIT;
+String desc2 = unit.describe();
+// Returns: "Average price per single unit"
+
+Interpretation marginal = Interpretation.MARGINAL;
+String desc3 = marginal.describe();
+// Returns: "Price of n-th specific unit"
+```
+
+## Practical Examples
+
+### Example 1: Step Function - Different Interpretations
+
+The same step function calculator can have different meanings:
+
+```java
+// Base: PLN 100, Step size: 10, Increment: PLN 5
+```
+
+**Interpretation: TOTAL**
+```java
+Calculator totalCalc = new StepFunctionCalculator(
+    "Volume Pricing",
+    Money.pln(100),              // base price
+    BigDecimal.valueOf(10),      // step size
+    BigDecimal.valueOf(5),       // step increment
+    Interpretation.TOTAL
+);
+
+// Quantity 15
+Money total = totalCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 105.00
+// Meaning: "Total cost for 15 units is PLN 105.00"
+```
+
+**Interpretation: UNIT**
+```java
+Calculator unitCalc = new StepFunctionCalculator(
+    "Unit Pricing",
+    Money.pln(10),               // base unit price
+    BigDecimal.valueOf(10),      // step size
+    BigDecimal.valueOf(0.5),     // unit price increment
+    Interpretation.UNIT
+);
+
+// Quantity 15
+Money unitPrice = unitCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 10.50
+// Meaning: "Average price per unit when buying 15 is PLN 10.50"
+// Total would be: PLN 10.50 × 15 = PLN 157.50
+```
+
+**Interpretation: MARGINAL**
+```java
+Calculator marginalCalc = new StepFunctionCalculator(
+    "Marginal Pricing",
+    Money.pln(10),               // first unit price
+    BigDecimal.valueOf(10),      // step size
+    BigDecimal.valueOf(1),       // marginal price increment
+    Interpretation.MARGINAL
+);
+
+// Quantity 15
+Money marginal = marginalCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 11.00
+// Meaning: "The 15th unit costs PLN 11.00"
+```
+
+### Example 2: Converting Between Interpretations
+
+**UNIT → TOTAL**
+```java
+// Unit price: PLN 10 per item
+Calculator unitCalc = new SimpleFixedCalculator(
+    "Unit Price",
+    Money.pln(10),
+    Interpretation.UNIT
+);
+
+// Convert to total price
+Calculator totalCalc = UnitToTotalAdapter.wrap(
+    "Total Price",
+    unitCalc
+);
+
+Money total = totalCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(5))
+);
+// Returns: PLN 50.00 (10 × 5)
+// Interpretation changed from UNIT to TOTAL
+```
+
+**TOTAL → UNIT**
+```java
+// Total price: PLN 150 for any quantity
+Calculator totalCalc = new SimpleFixedCalculator(
+    "Fixed Total",
+    Money.pln(150),
+    Interpretation.TOTAL
+);
+
+// Convert to unit price (average)
+Calculator unitCalc = TotalToUnitAdapter.wrap(
+    "Unit Price",
+    totalCalc
+);
+
+Money unitPrice = unitCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(10))
+);
+// Returns: PLN 15.00 (150 / 10)
+// Interpretation changed from TOTAL to UNIT
+```
+
+**TOTAL → MARGINAL**
+```java
+// Step function returning total price
+Calculator totalCalc = new StepFunctionCalculator(
+    "Volume Pricing",
+    Money.pln(100),
+    BigDecimal.valueOf(10),
+    BigDecimal.valueOf(5),
+    Interpretation.TOTAL
+);
+
+// Convert to marginal price
+Calculator marginalCalc = TotalToMarginalAdapter.wrap(
+    "Marginal Price",
+    totalCalc
+);
+
+// What does the 15th unit cost?
+Money marginal15 = marginalCalc.calculate(
+    Parameters.of("quantity", BigDecimal.valueOf(15))
+);
+// Returns: PLN 5.00
+// Calculation: Total(15) - Total(14) = PLN 105.00 - PLN 100.00
+```
+
+### Example 3: Business Scenario - Conference Pricing
+
+```java
+// Early bird pricing: total price increases daily
+Calculator earlyBirdTotal = new DailyIncrementCalculator(
+    "Early Bird Total",
+    LocalDate.of(2024, 6, 1),
+    Money.pln(1999),            // start price
+    Money.pln(100),             // daily increment
+    Interpretation.TOTAL
+);
+
+// Day 7: What's the total price?
+Money totalPrice = earlyBirdTotal.calculate(
+    Parameters.of("date", LocalDate.of(2024, 6, 8))
+);
+// Returns: PLN 2699.00
+// Interpretation: "Total ticket price on June 8 is PLN 2699.00"
+
+// Convert to marginal: how much does waiting one more day cost?
+Calculator marginalWaitingCost = TotalToMarginalAdapter.wrap(
+    "Waiting Cost",
+    new DailyIncrementCalculator(
+        "Daily Cost",
+        LocalDate.of(2024, 6, 1),
+        Money.pln(0),              // marginal starts at 0
+        Money.pln(100),            // daily marginal cost
+        Interpretation.TOTAL       // will be converted to MARGINAL
+    )
+);
+
+// Note: For daily increment with constant rate,
+// marginal is constant at PLN 100/day
+```
+
+## Composite Calculators and Interpretation
+
+<Warning>
+  **Important Constraint:** All component calculators in a `CompositeFunctionCalculator` must have the **same interpretation**.
+  
+  The composite calculator's `interpretation()` method returns the shared interpretation of its components.
+</Warning>
+
+**Valid Composite:**
+```java
+// Both components return TOTAL price
+Calculator smallOrders = new SimpleFixedCalculator(
+    "Small Orders",
+    Money.pln(50),
+    Interpretation.TOTAL        // ✅ TOTAL
+);
+
+Calculator largeOrders = new StepFunctionCalculator(
+    "Large Orders",
+    Money.pln(100),
+    BigDecimal.valueOf(10),
+    BigDecimal.valueOf(5),
+    Interpretation.TOTAL        // ✅ TOTAL
+);
+
+// Valid - both are TOTAL
+Calculator composite = new CompositeFunctionCalculator(
+    "Order Pricing",
+    ranges,
+    repository
+);
+composite.interpretation(); // Returns: TOTAL
+```
+
+**Invalid Composite:**
+```java
+// Mixing TOTAL and UNIT - will throw exception
+Calculator calc1 = new SimpleFixedCalculator(
+    "Total Price",
+    Money.pln(100),
+    Interpretation.TOTAL        // ❌ TOTAL
+);
+
+Calculator calc2 = new SimpleFixedCalculator(
+    "Unit Price",
+    Money.pln(10),
+    Interpretation.UNIT         // ❌ UNIT
+);
+
+// Throws IllegalArgumentException:
+// "All component calculators must have the same interpretation"
+Calculator composite = new CompositeFunctionCalculator(
+    "Mixed Pricing",
+    ranges,
+    repository
+);
+```
+
+## Default Interpretation
+
+Most calculators default to `Interpretation.TOTAL` when not specified:
+
+```java
+// These are equivalent:
+Calculator calc1 = new SimpleFixedCalculator(
+    "Monthly Fee",
+    Money.pln(99)
+);
+
+Calculator calc2 = new SimpleFixedCalculator(
+    "Monthly Fee",
+    Money.pln(99),
+    Interpretation.TOTAL
+);
+
+calc1.interpretation(); // Returns: TOTAL (default)
+calc2.interpretation(); // Returns: TOTAL (explicit)
+```
+
+## Interpretation vs. Calculator Type
+
+<Info>
+  **Interpretation** and **CalculatorType** are orthogonal concepts:
+  
+  - **CalculatorType**: *How* the price is calculated (algorithm)
+  - **Interpretation**: *What* the calculated price means (semantics)
+  
+  The same calculator type can have different interpretations.
+</Info>
+
+**Example:**
+```java
+// Same type (SIMPLE_FIXED), different interpretations
+
+Calculator totalFee = new SimpleFixedCalculator(
+    "Service Fee",
+    Money.pln(100),
+    Interpretation.TOTAL
+);
+totalFee.getType();           // Returns: SIMPLE_FIXED
+totalFee.interpretation();    // Returns: TOTAL
+
+Calculator unitPrice = new SimpleFixedCalculator(
+    "Per-Item Price",
+    Money.pln(10),
+    Interpretation.UNIT
+);
+unitPrice.getType();          // Returns: SIMPLE_FIXED
+unitPrice.interpretation();   // Returns: UNIT
+```
+
+## Mathematical Relationships
+
+### Discrete Functions
+
+For 1-dimensional discrete functions (quantity = 1, 2, 3, ...):
+
+```
+Total(q) = Σ[i=1→q] Marginal(i)
+
+Marginal(n) = Total(n) - Total(n-1)
+
+UnitAverage(q) = Total(q) / q
+```
+
+### Continuous Functions
+
+For 1-dimensional continuous functions:
+
+```
+Total(x) = ∫[0→x] Marginal(t) dt
+
+Marginal(x) = dTotal/dx
+
+UnitAverage(x) = Total(x) / x
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Choose Interpretation Carefully" icon="lightbulb">
+    Select the interpretation that matches your business domain:
+    - Invoices → `TOTAL`
+    - Price tags → `UNIT`
+    - Marginal analysis → `MARGINAL`
+  </Card>
+  
+  <Card title="Document Interpretation" icon="book">
+    Always document which interpretation your calculators use, especially when building composite pricing models.
+  </Card>
+  
+  <Card title="Use Adapters for Conversion" icon="arrows-rotate">
+    Don't manually convert between interpretations. Use the built-in adapter classes:
+    - `UnitToTotalAdapter`
+    - `TotalToMarginalAdapter`
+    - etc.
+  </Card>
+  
+  <Card title="Validate Composite Components" icon="shield-check">
+    The framework automatically validates that composite calculators have uniform interpretations. Don't try to mix them.
+  </Card>
+</CardGroup>
+
+## Related Documentation
+
+- [Calculator Interface](/api/pricing/calculator) - Using interpretation in calculators
+- [Calculator Types](/api/pricing/calculator-types) - Calculator type system
+- [Parameters](/api/pricing/parameters) - Input parameters for calculations

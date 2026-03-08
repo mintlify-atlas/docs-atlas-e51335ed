@@ -1,0 +1,561 @@
+---
+title: 'Pricing Strategies'
+description: 'Build flexible pricing models with composite components and calculators'
+---
+
+The Pricing module uses **semantic composition** to build complex pricing structures from simple calculators. This tutorial shows how to create pricing strategies for telecom, e-commerce, and subscription businesses.
+
+## Prerequisites
+
+```xml
+<dependency>
+    <groupId>com.softwarearchetypes</groupId>
+    <artifactId>pricing</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+## Core Concepts
+
+### Calculators
+
+Calculators are the atomic pricing units (price lists):
+- **SIMPLE_FIXED** - Flat fee (e.g., 25 PLN)
+- **PERCENTAGE** - Percentage of base amount (e.g., 23% VAT)
+- **STEP_FUNCTION** - Tiered pricing (e.g., 2 PLN per GB)
+- **LINEAR** - Continuous linear pricing
+
+### Components
+
+Components wrap calculators and compose into hierarchies:
+- **Simple Component** - Wraps a single calculator
+- **Composite Component** - Combines multiple components
+- Components can depend on each other's values
+
+## Step-by-Step Tutorial
+
+<Steps>
+
+### Setup Pricing Configuration
+
+```java
+import com.softwarearchetypes.pricing.*;
+import com.softwarearchetypes.quantity.money.Money;
+import java.math.BigDecimal;
+import java.time.*;
+
+Clock clock = Clock.systemDefaultZone();
+PricingConfiguration config = PricingConfiguration.inMemory(clock);
+PricingFacade facade = config.pricingFacade();
+```
+
+### Create Basic Calculators
+
+Define the pricing rules (price lists):
+
+```java
+// Fixed base fee: 45 PLN
+facade.addCalculator(
+    "base-fee-calc",
+    CalculatorType.SIMPLE_FIXED,
+    Parameters.of("amount", Money.pln(BigDecimal.valueOf(45)))
+);
+
+// Data overage: 2 PLN per GB
+facade.addCalculator(
+    "data-overage-calc",
+    CalculatorType.STEP_FUNCTION,
+    Parameters.of(
+        "basePrice", Money.pln(BigDecimal.ZERO),
+        "stepSize", BigDecimal.ONE,
+        "stepIncrement", BigDecimal.valueOf(2)
+    )
+);
+
+// VAT: 23%
+facade.addCalculator(
+    "vat-calc",
+    CalculatorType.PERCENTAGE,
+    Parameters.of("percentageRate", BigDecimal.valueOf(23))
+);
+```
+
+### Create Simple Components
+
+Wrap calculators in components:
+
+```java
+// Base fee component
+facade.createSimpleComponent("base-fee", "base-fee-calc");
+
+// Data overage component
+facade.createSimpleComponent("data-overage", "data-overage-calc");
+
+// VAT component
+facade.createSimpleComponent("vat", "vat-calc");
+```
+
+### Calculate Simple Pricing
+
+Calculate prices using components:
+
+```java
+// Base fee (no parameters needed)
+Money baseFee = facade.calculateComponent("base-fee", Parameters.empty());
+System.out.println("Base fee: " + baseFee); // 45 PLN
+
+// Data overage for 3 GB
+Parameters dataParams = Parameters.of("quantity", BigDecimal.valueOf(3));
+Money dataCharge = facade.calculateComponent("data-overage", dataParams);
+System.out.println("Data overage: " + dataCharge); // 6 PLN (3 * 2)
+
+// VAT on 100 PLN
+Parameters vatParams = Parameters.of("baseAmount", BigDecimal.valueOf(100));
+Money vat = facade.calculateComponent("vat", vatParams);
+System.out.println("VAT: " + vat); // 23 PLN
+```
+
+### Create Composite Components
+
+Combine components into hierarchies:
+
+```java
+import java.util.Map;
+
+// Net amount = base fee + data overage
+facade.createCompositeComponent(
+    "net-amount",
+    Map.of(),  // No parameter mappings needed
+    "base-fee",
+    "data-overage"
+);
+
+// Calculate net amount
+Money netAmount = facade.calculateComponent("net-amount", dataParams);
+System.out.println("Net amount: " + netAmount); // 51 PLN (45 + 6)
+```
+
+### Add Component Dependencies
+
+Make components depend on other components' values:
+
+```java
+// Total bill = net amount + VAT (where VAT depends on net amount)
+facade.createCompositeComponent(
+    "total-bill",
+    Map.of(
+        "vat", Map.of(
+            "baseAmount", new ValueOf("net-amount")  // VAT uses net-amount's value
+        )
+    ),
+    "net-amount",
+    "vat"
+);
+
+// Calculate total with dependency resolution
+Money total = facade.calculateComponent("total-bill", dataParams);
+System.out.println("Total: " + total); // 62.73 PLN (51 + 11.73)
+```
+
+### Get Pricing Breakdown
+
+Understand how the price was calculated:
+
+```java
+ComponentBreakdown breakdown = facade.calculateComponentBreakdown(
+    "total-bill",
+    dataParams
+);
+
+System.out.println("Component: " + breakdown.name());
+System.out.println("Total: " + breakdown.total());
+System.out.println("Children: " + breakdown.children().size());
+
+// Navigate the hierarchy
+for (ComponentBreakdown child : breakdown.children()) {
+    System.out.println("  - " + child.name() + ": " + child.total());
+    
+    for (ComponentBreakdown grandChild : child.children()) {
+        System.out.println("    - " + grandChild.name() + ": " + grandChild.total());
+    }
+}
+```
+
+Output:
+```
+Component: total-bill
+Total: 62.73 PLN
+Children: 2
+  - net-amount: 51.00 PLN
+    - base-fee: 45.00 PLN
+    - data-overage: 6.00 PLN
+  - vat: 11.73 PLN
+```
+
+</Steps>
+
+## Real-World Example: Telecom Billing
+
+Let's build a complete mobile subscription pricing model:
+
+<CodeGroup>
+
+```java Telecom Pricing
+import com.softwarearchetypes.pricing.*;
+import com.softwarearchetypes.quantity.money.Money;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.util.Map;
+
+public class TelecomPricing {
+    private final PricingFacade facade;
+    
+    public TelecomPricing() {
+        PricingConfiguration config = PricingConfiguration.inMemory(Clock.systemDefaultZone());
+        this.facade = config.pricingFacade();
+        setupPricing();
+    }
+    
+    private void setupPricing() {
+        // Define calculators
+        facade.addCalculator("network-maint", CalculatorType.SIMPLE_FIXED,
+            Parameters.of("amount", Money.pln(BigDecimal.valueOf(25))));
+            
+        facade.addCalculator("commission", CalculatorType.SIMPLE_FIXED,
+            Parameters.of("amount", Money.pln(BigDecimal.valueOf(20))));
+            
+        facade.addCalculator("data-overage-rate", CalculatorType.STEP_FUNCTION,
+            Parameters.of(
+                "basePrice", Money.pln(BigDecimal.ZERO),
+                "stepSize", BigDecimal.ONE,
+                "stepIncrement", BigDecimal.valueOf(2)
+            ));
+            
+        facade.addCalculator("roaming-rate", CalculatorType.STEP_FUNCTION,
+            Parameters.of(
+                "basePrice", Money.pln(BigDecimal.ZERO),
+                "stepSize", BigDecimal.ONE,
+                "stepIncrement", BigDecimal.valueOf(1.5)
+            ));
+            
+        facade.addCalculator("vat-rate", CalculatorType.PERCENTAGE,
+            Parameters.of("percentageRate", BigDecimal.valueOf(23)));
+        
+        // Create simple components
+        facade.createSimpleComponent("network-maintenance", "network-maint");
+        facade.createSimpleComponent("commission-fee", "commission");
+        facade.createSimpleComponent("data-overage", "data-overage-rate");
+        facade.createSimpleComponent("roaming-overage", "roaming-rate");
+        facade.createSimpleComponent("vat", "vat-rate");
+        
+        // Compose base fee
+        facade.createCompositeComponent(
+            "base-subscription-fee",
+            Map.of(),
+            "network-maintenance",
+            "commission-fee"
+        );
+        
+        // Compose net charges
+        facade.createCompositeComponent(
+            "net-charges",
+            Map.of(),
+            "base-subscription-fee",
+            "data-overage",
+            "roaming-overage"
+        );
+        
+        // Total with VAT dependency
+        facade.createCompositeComponent(
+            "total-bill",
+            Map.of(
+                "vat", Map.of("baseAmount", new ValueOf("net-charges"))
+            ),
+            "net-charges",
+            "vat"
+        );
+    }
+    
+    public Money calculateBill(int dataOverageGB, int roamingOverageMinutes) {
+        Parameters params = Parameters.empty();
+        
+        if (dataOverageGB > 0) {
+            params = params.with("quantity", BigDecimal.valueOf(dataOverageGB));
+        }
+        
+        if (roamingOverageMinutes > 0) {
+            // For roaming, we need to pass it separately or enhance the model
+            // Simplified here: use same quantity param
+            params = params.with("roaming-quantity", BigDecimal.valueOf(roamingOverageMinutes));
+        }
+        
+        return facade.calculateComponent("total-bill", params);
+    }
+    
+    public ComponentBreakdown getBillBreakdown(int dataOverageGB, int roamingOverageMinutes) {
+        Parameters params = Parameters.of("quantity", BigDecimal.valueOf(dataOverageGB));
+        return facade.calculateComponentBreakdown("total-bill", params);
+    }
+    
+    public static void main(String[] args) {
+        TelecomPricing pricing = new TelecomPricing();
+        
+        // Scenario 1: Base fee only (no overage)
+        Money baseBill = pricing.calculateBill(0, 0);
+        System.out.println("Base subscription: " + baseBill);
+        
+        // Scenario 2: With 3 GB data overage
+        Money billWithData = pricing.calculateBill(3, 0);
+        System.out.println("With 3GB overage: " + billWithData);
+        
+        // Scenario 3: With detailed breakdown
+        ComponentBreakdown breakdown = pricing.getBillBreakdown(3, 0);
+        System.out.println("\nDetailed breakdown:");
+        printBreakdown(breakdown, 0);
+    }
+    
+    private static void printBreakdown(ComponentBreakdown breakdown, int indent) {
+        String prefix = "  ".repeat(indent);
+        System.out.println(prefix + breakdown.name() + ": " + breakdown.total());
+        for (ComponentBreakdown child : breakdown.children()) {
+            printBreakdown(child, indent + 1);
+        }
+    }
+}
+```
+
+```output Expected Output
+Base subscription: 55.35 PLN
+With 3GB overage: 62.73 PLN
+
+Detailed breakdown:
+total-bill: 62.73 PLN
+  net-charges: 51.00 PLN
+    base-subscription-fee: 45.00 PLN
+      network-maintenance: 25.00 PLN
+      commission-fee: 20.00 PLN
+    data-overage: 6.00 PLN
+    roaming-overage: 0.00 PLN
+  vat: 11.73 PLN
+```
+
+</CodeGroup>
+
+## Advanced Patterns
+
+### Pattern: Tiered Pricing
+
+Create volume discounts:
+
+```java
+// 0-100 units: 10 PLN each
+// 101-500 units: 8 PLN each  
+// 501+ units: 6 PLN each
+
+facade.addCalculator("tiered-pricing", CalculatorType.STEP_FUNCTION,
+    Parameters.of(
+        "basePrice", Money.pln(BigDecimal.valueOf(10)),
+        "tier1Threshold", BigDecimal.valueOf(100),
+        "tier1Price", Money.pln(BigDecimal.valueOf(8)),
+        "tier2Threshold", BigDecimal.valueOf(500),
+        "tier2Price", Money.pln(BigDecimal.valueOf(6))
+    )
+);
+```
+
+### Pattern: Time-Based Pricing
+
+Use applicability constraints for seasonal pricing:
+
+```java
+import java.time.LocalDateTime;
+
+// Summer pricing (June-August)
+facade.createSimpleComponent(
+    "summer-rate",
+    "high-season-calc",
+    ApplicabilityConstraint.between(
+        LocalDateTime.of(2024, 6, 1, 0, 0),
+        LocalDateTime.of(2024, 8, 31, 23, 59)
+    )
+);
+
+// Winter pricing (December-February)
+facade.createSimpleComponent(
+    "winter-rate",
+    "low-season-calc",
+    ApplicabilityConstraint.between(
+        LocalDateTime.of(2024, 12, 1, 0, 0),
+        LocalDateTime.of(2025, 2, 28, 23, 59)
+    )
+);
+```
+
+### Pattern: Conditional Components
+
+Add components that only apply under certain conditions:
+
+```java
+// Loyalty discount for customers with > 12 months
+facade.createSimpleComponent(
+    "loyalty-discount",
+    "discount-calc",
+    ApplicabilityConstraint.when(
+        params -> params.has("tenure-months") && 
+                  params.get("tenure-months").compareTo(BigDecimal.valueOf(12)) > 0
+    )
+);
+```
+
+### Pattern: Component Versioning
+
+Create multiple versions of pricing:
+
+```java
+// Version 1: Original pricing
+ComponentVersion v1 = facade.createCompositeComponent(
+    "subscription-v1",
+    Map.of(),
+    "base-fee-v1",
+    "overage-v1"
+);
+
+// Version 2: New pricing structure
+ComponentVersion v2 = facade.createCompositeComponent(
+    "subscription-v2",
+    Map.of(),
+    "base-fee-v2",
+    "overage-v2",
+    "premium-features"
+);
+
+// Calculate using specific version
+Money priceV1 = facade.calculateComponent("subscription-v1", params);
+Money priceV2 = facade.calculateComponent("subscription-v2", params);
+```
+
+## E-Commerce Example
+
+<CodeGroup>
+
+```java E-Commerce Pricing
+public class ECommercePricing {
+    private final PricingFacade facade;
+    
+    public ECommercePricing() {
+        PricingConfiguration config = PricingConfiguration.inMemory(Clock.systemDefaultZone());
+        this.facade = config.pricingFacade();
+        setupPricing();
+    }
+    
+    private void setupPricing() {
+        // Product price calculator
+        facade.addCalculator("product-price", CalculatorType.SIMPLE_FIXED,
+            Parameters.of("amount", Money.pln(BigDecimal.valueOf(0))));
+        
+        // Shipping: 15 PLN base + 2 PLN per kg
+        facade.addCalculator("shipping-calc", CalculatorType.LINEAR,
+            Parameters.of(
+                "basePrice", Money.pln(BigDecimal.valueOf(15)),
+                "pricePerUnit", BigDecimal.valueOf(2)
+            ));
+        
+        // Gift wrapping: 10 PLN flat
+        facade.addCalculator("gift-wrap", CalculatorType.SIMPLE_FIXED,
+            Parameters.of("amount", Money.pln(BigDecimal.valueOf(10))));
+        
+        // Discount: 10%
+        facade.addCalculator("discount-calc", CalculatorType.PERCENTAGE,
+            Parameters.of("percentageRate", BigDecimal.valueOf(-10)));
+        
+        // VAT: 23%
+        facade.addCalculator("vat-calc", CalculatorType.PERCENTAGE,
+            Parameters.of("percentageRate", BigDecimal.valueOf(23)));
+        
+        // Components
+        facade.createSimpleComponent("product", "product-price");
+        facade.createSimpleComponent("shipping", "shipping-calc");
+        facade.createSimpleComponent("gift-wrapping", "gift-wrap");
+        facade.createSimpleComponent("discount", "discount-calc");
+        facade.createSimpleComponent("vat", "vat-calc");
+        
+        // Subtotal before discount
+        facade.createCompositeComponent(
+            "subtotal-before-discount",
+            Map.of(),
+            "product",
+            "shipping",
+            "gift-wrapping"
+        );
+        
+        // Net amount after discount
+        facade.createCompositeComponent(
+            "net-amount",
+            Map.of(
+                "discount", Map.of("baseAmount", new ValueOf("subtotal-before-discount"))
+            ),
+            "subtotal-before-discount",
+            "discount"
+        );
+        
+        // Total with VAT
+        facade.createCompositeComponent(
+            "order-total",
+            Map.of(
+                "vat", Map.of("baseAmount", new ValueOf("net-amount"))
+            ),
+            "net-amount",
+            "vat"
+        );
+    }
+    
+    public Money calculateOrderTotal(Money productPrice, double weightKg, boolean addGiftWrap) {
+        Parameters params = Parameters.of("amount", productPrice.amount())
+            .with("weight", BigDecimal.valueOf(weightKg));
+        
+        // Conditional gift wrapping would require enhanced logic
+        return facade.calculateComponent("order-total", params);
+    }
+}
+```
+
+</CodeGroup>
+
+## Simulation and What-If Analysis
+
+Test pricing changes before deployment:
+
+```java
+// Current pricing
+Money currentPrice = facade.calculateComponent("subscription", params);
+
+// Simulate new pricing structure
+facade.addCalculator("new-base-calc", CalculatorType.SIMPLE_FIXED,
+    Parameters.of("amount", Money.pln(BigDecimal.valueOf(50))));
+    
+facade.createSimpleComponent("new-base-fee", "new-base-calc");
+
+facade.createCompositeComponent(
+    "simulated-subscription",
+    Map.of(),
+    "new-base-fee",
+    "data-overage",
+    "roaming-overage"
+);
+
+Money simulatedPrice = facade.calculateComponent("simulated-subscription", params);
+
+System.out.println("Current: " + currentPrice);
+System.out.println("Simulated: " + simulatedPrice);
+System.out.println("Difference: " + simulatedPrice.subtract(currentPrice));
+```
+
+## Next Steps
+
+- Learn about [Component Versioning](/concepts/pricing-versions) for price history
+- Explore [Applicability Constraints](/concepts/pricing-constraints) for complex rules
+- See [Multi-Currency Pricing](/examples/multi-currency) for international sales
+
+<Note>
+  The Pricing module separates **what to charge** (calculators) from **how to compose** (components). This enables flexible pricing evolution without code changes.
+</Note>

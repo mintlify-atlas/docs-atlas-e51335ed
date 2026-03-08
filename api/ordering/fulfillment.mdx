@@ -1,0 +1,278 @@
+---
+title: Fulfillment Service
+description: Orchestrates order fulfillment and delegates to specialized fulfillment services
+---
+
+## Overview
+
+The `FulfillmentService` interface defines the contract for managing order fulfillment operations. It provides methods to start and cancel fulfillment processes, delegating actual fulfillment to specialized services based on product type or fulfillment strategy.
+
+## Interface Definition
+
+```java
+package com.softwarearchetypes.ordering;
+
+interface FulfillmentService {
+    void startFulfillment(OrderId orderId);
+    void cancelFulfillment(OrderId orderId);
+}
+```
+
+## Methods
+
+### startFulfillment()
+
+Initiates the fulfillment process for a confirmed order.
+
+```java
+void startFulfillment(OrderId orderId)
+```
+
+<ParamField path="orderId" type="OrderId" required>
+  Unique identifier of the order to fulfill
+</ParamField>
+
+**Behavior:**
+- Called automatically when an order is confirmed
+- Delegates to appropriate fulfillment handlers based on product types
+- May trigger warehouse operations, shipping arrangements, or service provisioning
+- Should be idempotent - calling multiple times with same orderId should not cause issues
+
+**Usage Context:**
+- Invoked by `Order.confirm()` after successful inventory allocation and payment capture
+- Implementation typically publishes events to fulfillment workers or external systems
+
+### cancelFulfillment()
+
+Cancels ongoing fulfillment operations for an order.
+
+```java
+void cancelFulfillment(OrderId orderId)
+```
+
+<ParamField path="orderId" type="OrderId" required>
+  Unique identifier of the order whose fulfillment should be cancelled
+</ParamField>
+
+**Behavior:**
+- Called when an order is cancelled after confirmation
+- May not fully reverse fulfillment if items already shipped
+- Should notify fulfillment workers to stop processing
+- Implementation decides whether cancellation is possible based on current fulfillment state
+
+**Usage Context:**
+- Invoked by `Order.cancel()` when cancelling a non-DRAFT order
+- Not called for DRAFT orders since fulfillment hasn't started
+
+## Implementation: FixableFulfillmentService
+
+The codebase includes a test implementation that demonstrates the interface contract:
+
+```java
+class FixableFulfillmentService implements FulfillmentService {
+    private boolean shouldThrowOnStart = false;
+    private final List<OrderId> startedOrders = new ArrayList<>();
+    private final List<OrderId> cancelledOrders = new ArrayList<>();
+    
+    @Override
+    public void startFulfillment(OrderId orderId) {
+        if (shouldThrowOnStart) {
+            throw new RuntimeException("Fulfillment service unavailable");
+        }
+        startedOrders.add(orderId);
+    }
+    
+    @Override
+    public void cancelFulfillment(OrderId orderId) {
+        cancelledOrders.add(orderId);
+    }
+}
+```
+
+### Test Helper Methods
+
+<ParamField path="willFailOnStart()" type="void">
+  Configures the service to throw exceptions on startFulfillment() calls
+</ParamField>
+
+<ParamField path="reset()" type="void">
+  Clears tracked orders and resets failure mode
+</ParamField>
+
+<ParamField path="startedOrders()" type="List<OrderId>">
+  Returns list of orders for which fulfillment was started
+</ParamField>
+
+<ParamField path="cancelledOrders()" type="List<OrderId>">
+  Returns list of orders for which fulfillment was cancelled
+</ParamField>
+
+## Integration with Order
+
+The fulfillment service is provided to orders via `OrderServices`:
+
+```java
+record OrderServices(
+    PricingService pricing,
+    InventoryService inventory,
+    PaymentService payment,
+    FulfillmentService fulfillment
+) {}
+```
+
+Orders interact with fulfillment at key lifecycle points:
+
+### During Order Confirmation
+
+```java
+void confirm() {
+    checkState(status == OrderStatus.DRAFT, "Only DRAFT orders can be confirmed");
+    
+    // ... inventory allocation ...
+    // ... payment capture ...
+    
+    this.status = OrderStatus.CONFIRMED;
+    services.fulfillment().startFulfillment(this.id);  // Start fulfillment
+}
+```
+
+### During Order Cancellation
+
+```java
+void cancel() {
+    checkState(status.canCancel(), "Cannot cancel order in status: " + status);
+    OrderStatus previousStatus = this.status;
+    this.status = OrderStatus.CANCELLED;
+    
+    if (previousStatus != OrderStatus.DRAFT) {
+        services.fulfillment().cancelFulfillment(this.id);  // Cancel if started
+    }
+}
+```
+
+## Usage Examples
+
+### Implementing a Custom Fulfillment Service
+
+```java
+public class WarehouseFulfillmentService implements FulfillmentService {
+    private final OrderRepository orderRepository;
+    private final FulfillmentEventPublisher eventPublisher;
+    
+    @Override
+    public void startFulfillment(OrderId orderId) {
+        Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new OrderNotFoundException(orderId));
+        
+        // Publish event to fulfillment workers
+        FulfillmentStartedEvent event = new FulfillmentStartedEvent(
+            orderId,
+            order.lines(),
+            Instant.now()
+        );
+        eventPublisher.publish(event);
+        
+        // Update fulfillment tracking
+        fulfillmentTracker.create(orderId, FulfillmentStatus.IN_PROGRESS);
+    }
+    
+    @Override
+    public void cancelFulfillment(OrderId orderId) {
+        // Check if cancellation is possible
+        FulfillmentStatus status = fulfillmentTracker.getStatus(orderId);
+        
+        if (status.isCancellable()) {
+            eventPublisher.publish(new FulfillmentCancelledEvent(orderId));
+            fulfillmentTracker.updateStatus(orderId, FulfillmentStatus.CANCELLED);
+        } else {
+            throw new FulfillmentCancellationNotAllowedException(
+                "Order " + orderId + " is already " + status
+            );
+        }
+    }
+}
+```
+
+### Multi-Strategy Fulfillment Router
+
+```java
+public class RoutingFulfillmentService implements FulfillmentService {
+    private final Map<ProductType, FulfillmentService> strategies;
+    private final OrderRepository orderRepository;
+    
+    @Override
+    public void startFulfillment(OrderId orderId) {
+        Order order = orderRepository.findById(orderId).orElseThrow();
+        
+        // Group lines by product type
+        Map<ProductType, List<OrderLine>> linesByType = order.lines().stream()
+            .collect(groupingBy(line -> line.productId().type()));
+        
+        // Delegate to appropriate fulfillment services
+        for (var entry : linesByType.entrySet()) {
+            FulfillmentService strategy = strategies.get(entry.getKey());
+            strategy.startFulfillment(orderId);  // Partial fulfillment
+        }
+    }
+    
+    @Override
+    public void cancelFulfillment(OrderId orderId) {
+        // Cancel all fulfillment strategies
+        strategies.values().forEach(service -> 
+            service.cancelFulfillment(orderId)
+        );
+    }
+}
+```
+
+## Fulfillment Status Updates
+
+Fulfillment services typically update order status asynchronously by calling back to the order:
+
+```java
+// In fulfillment worker or event handler
+public void onFulfillmentProgress(FulfillmentProgressEvent event) {
+    Order order = orderRepository.findById(event.orderId()).orElseThrow();
+    
+    // Update order with fulfillment progress
+    order.updateFulfillmentStatus(event.status());
+    
+    orderRepository.save(order);
+}
+```
+
+## Related Types
+
+- **OrderId**: Unique identifier for orders
+- **FulfillmentStatus**: Enum representing fulfillment states (IN_PROGRESS, PARTIALLY_COMPLETED, COMPLETED)
+- **OrderServices**: Service container including fulfillment service
+- **Order**: Main aggregate that uses fulfillment service
+
+## Design Considerations
+
+### Asynchronous Operations
+
+Fulfillment operations are typically asynchronous:
+- `startFulfillment()` should return quickly after initiating the process
+- Actual fulfillment happens in background workers
+- Progress updates flow back through `Order.updateFulfillmentStatus()`
+
+### Idempotency
+
+Implementations should be idempotent:
+- Multiple calls to `startFulfillment()` with same orderId should be safe
+- Use order status or fulfillment tracking to prevent duplicate processing
+
+### Failure Handling
+
+Implementations should handle failures gracefully:
+- Transient failures should retry
+- Permanent failures should update order status appropriately
+- Consider compensation mechanisms for partial fulfillment
+
+### Integration Points
+
+- **Warehouse Management Systems**: For physical product fulfillment
+- **Shipping Carriers**: For delivery arrangements
+- **Service Provisioning**: For digital products or services
+- **Notification Systems**: For customer updates on fulfillment progress

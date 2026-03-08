@@ -1,0 +1,510 @@
+---
+title: 'Anti-Pattern: Bad Implementation'
+description: 'Learn what NOT to do when implementing plan vs execution logic'
+icon: 'triangle-exclamation'
+---
+
+This page demonstrates **anti-patterns** in plan vs execution implementations. These are **real problems** found in production systems. Understanding these failures helps you avoid them.
+
+<Warning>
+  The code examples here show **what NOT to do**. They illustrate common mistakes that lead to unmaintainable systems.
+</Warning>
+
+## Problem 1: Plan Without Source of Truth
+
+When the plan is **reconstructed** from multiple mutable sources instead of being stored as an immutable snapshot.
+
+### The Bad Pattern
+
+```java
+public class DeliveryPlanService {
+    private CustomerRepository customerRepo;
+    private WarehouseRepository warehouseRepo;
+    private WorkingCalendar calendar;
+    private DriverAvailabilityRepository driverRepo;
+    
+    // ❌ BAD: Calculates plan from current entity state
+    public LocalDate calculateDeliveryPlan(
+        Long orderId,
+        Long customerId,
+        LocalDate orderDate
+    ) {
+        Customer customer = customerRepo.findById(customerId);
+        Warehouse warehouse = warehouseRepo.findByRegion(customer.getRegion());
+        
+        // Plan depends on CURRENT customer SLA
+        LocalDate deliveryDate = calendar.addWorkingDays(
+            orderDate,
+            customer.getSlaDeliveryDays()
+        );
+        
+        // Check driver availability
+        if (!driverRepo.hasAvailableDriver(deliveryDate)) {
+            deliveryDate = driverRepo.findNextAvailableDate(deliveryDate);
+        }
+        
+        return deliveryDate;
+    }
+}
+```
+
+### Why This Is Bad
+
+```java
+// Day 1: Calculate plan
+LocalDate plan1 = service.calculateDeliveryPlan(100L, 1L, 
+    LocalDate.of(2024, 1, 15));
+System.out.println("Plan: " + plan1);  // 2024-01-18 (3 days)
+
+// Day 2: Someone changes customer SLA
+Customer customer = customerRepo.findById(1L);
+customer.setSlaDeliveryDays(5);  // Changed from 3 to 5!
+customerRepo.save(customer);
+
+// Day 3: Recalculate plan
+LocalDate plan2 = service.calculateDeliveryPlan(100L, 1L, 
+    LocalDate.of(2024, 1, 15));
+System.out.println("Plan: " + plan2);  // 2024-01-22 (5 days)
+
+// ❌ PROBLEM: Plan changed, but we have NO HISTORY!
+// - What was the plan yesterday?
+// - Why did it change?
+// - Was it a business decision or a bug fix?
+// - How do we compare today's execution with yesterday's plan?
+```
+
+### The Questions You Cannot Answer
+
+1. **"What was the delivery plan on January 10?"**
+   - Impossible. You can only calculate the plan based on TODAY's data.
+
+2. **"Why did the plan change?"**
+   - No audit trail. Was it a business decision? Data correction? Bug fix?
+
+3. **"Compare today's execution with last week's plan"**
+   - Impossible. Last week's plan is gone.
+
+4. **"Simulate: what if customer SLA was 7 days?"**
+   - You'd have to mutate production data or create complex copies.
+
+### The Correct Pattern
+
+```java
+// ✓ GOOD: Store immutable plan snapshot
+public class DeliveryPlan {
+    private final PlanId id;
+    private final OrderId orderId;
+    private final LocalDate plannedDeliveryDate;
+    private final int slaDeliveryDays;  // Captured at plan time
+    private final String warehouseRegion;
+    private final Instant planCreatedAt;
+    
+    // Constructor, getters - all final, no setters
+}
+
+public class DeliveryPlanService {
+    private DeliveryPlanRepository planRepo;
+    
+    public DeliveryPlan createPlan(
+        OrderId orderId,
+        Customer customer,
+        Warehouse warehouse,
+        LocalDate orderDate
+    ) {
+        // Capture current state as immutable plan
+        DeliveryPlan plan = new DeliveryPlan(
+            PlanId.generate(),
+            orderId,
+            calculateDate(customer, orderDate),
+            customer.getSlaDeliveryDays(),  // Snapshot!
+            warehouse.getRegion(),
+            Instant.now()
+        );
+        
+        planRepo.save(plan);
+        return plan;
+    }
+    
+    // ✓ Can retrieve historical plans
+    public Optional<DeliveryPlan> findPlanAsOf(
+        OrderId orderId,
+        Instant when
+    ) {
+        return planRepo.findByOrderIdAndCreatedAt(orderId, when);
+    }
+}
+```
+
+## Problem 2: Plan and Execution in One Entity
+
+When plan and execution are stored in the **same mutable entity**.
+
+### The Bad Pattern
+
+```java
+// ❌ BAD: Plan and execution mixed together
+public class DeliveryScheduleEntity {
+    private Long id;
+    private Long orderId;
+    
+    // Plan fields
+    private LocalDate plannedDeliveryDate;
+    private Integer plannedQuantity;
+    
+    // Execution fields
+    private LocalDate actualDeliveryDate;
+    private Integer actualQuantity;
+    
+    // Audit fields
+    private String lastModifiedBy;
+    private LocalDate lastModified;
+    
+    // ❌ BAD: Mutates plan!
+    public void updatePlan(
+        LocalDate newDate,
+        Integer newQuantity,
+        String modifiedBy
+    ) {
+        this.plannedDeliveryDate = newDate;
+        this.plannedQuantity = newQuantity;
+        this.lastModifiedBy = modifiedBy;
+        this.lastModified = LocalDate.now();
+        // LOST: Original plan!
+    }
+    
+    public void updateActualDelivery(
+        LocalDate actualDate,
+        Integer actualQuantity
+    ) {
+        this.actualDeliveryDate = actualDate;
+        this.actualQuantity = actualQuantity;
+    }
+    
+    public DeliveryDelta calculateDelta() {
+        int dateDiff = ChronoUnit.DAYS.between(
+            plannedDeliveryDate,
+            actualDeliveryDate
+        );
+        int qtyDiff = actualQuantity - plannedQuantity;
+        
+        return new DeliveryDelta(dateDiff, qtyDiff);
+    }
+}
+```
+
+### Why This Is Bad
+
+```java
+// Create schedule
+DeliveryScheduleEntity schedule = new DeliveryScheduleEntity(
+    1L, 100L,
+    LocalDate.of(2024, 1, 20),  // Planned
+    100                          // Planned qty
+);
+
+// Execution happens
+schedule.updateActualDelivery(
+    LocalDate.of(2024, 1, 22),  // 2 days late
+    95                           // 5 units short
+);
+
+// Calculate delta
+DeliveryDelta delta1 = schedule.calculateDelta();
+System.out.println("Days late: " + delta1.dateDifference());  // 2
+System.out.println("Qty short: " + delta1.quantityDifference());  // -5
+
+// Business asks: "What if we had planned for Jan 25?"
+// ❌ PROBLEM: Can't answer without MUTATING the entity!
+schedule.updatePlan(
+    LocalDate.of(2024, 1, 25),
+    100,
+    "analyst"
+);
+
+// Recalculate
+DeliveryDelta delta2 = schedule.calculateDelta();
+System.out.println("Days late: " + delta2.dateDifference());  // -3 (early!)
+
+// ❌ LOST: Original plan and original delta!
+// ❌ CORRUPTED: Historical data!
+```
+
+### Problems This Causes
+
+#### 1. Cannot Compare One Execution Against Multiple Plans
+
+```java
+// ❌ IMPOSSIBLE: Compare same execution with 3 different plans
+// We can only calculate ONE delta at a time because
+// plan and execution are coupled in one entity!
+
+DeliveryDelta vsOriginalPlan = ???;      // Lost after update
+DeliveryDelta vsRevisedPlan = ???;       // Current state
+DeliveryDelta vsAlternativePlan = ???;   // Impossible
+```
+
+#### 2. Simulation Creates Messy Copies
+
+```java
+public DeliveryDelta simulateIfDeliveredOn(
+    LocalDate simulatedDate,
+    Integer simulatedQty
+) {
+    // ❌ BAD: Must create copy to avoid corrupting production data
+    DeliveryScheduleEntity copy = this.clone();
+    copy.updateActualDelivery(simulatedDate, simulatedQty);
+    return copy.calculateDelta();
+    // Problems:
+    // - Memory overhead for every simulation
+    // - equals()/hashCode() issues
+    // - Risk of accidentally using wrong instance
+    // - Cannot run simulations in parallel safely
+}
+```
+
+#### 3. No Combinatorics
+
+Businesses need: **N plans × M executions = N×M deltas**
+
+But with coupled entities: **1 plan × 1 execution = 1 delta** (at a time)
+
+```java
+// Business questions we CANNOT answer:
+// Q1: "How does execution A compare to plans 1, 2, and 3?"
+// Q2: "How do executions A, B, C compare to the original plan?"
+// Q3: "Which plan best matches this execution?"
+
+// All impossible because plan and execution are coupled!
+```
+
+### The Correct Pattern
+
+```java
+// ✓ GOOD: Separate immutable entities
+@Immutable
+public class DeliveryPlan {
+    private final PlanId id;
+    private final OrderId orderId;
+    private final LocalDate plannedDate;
+    private final Integer plannedQuantity;
+    private final Instant createdAt;
+    
+    // No setters, all final
+}
+
+@Immutable
+public class DeliveryExecution {
+    private final ExecutionId id;
+    private final OrderId orderId;
+    private final LocalDate actualDate;
+    private final Integer actualQuantity;
+    private final Instant executedAt;
+    
+    // No setters, all final
+}
+
+// ✓ GOOD: Stateless delta calculator
+public class DeliveryDeltaCalculator {
+    public DeliveryDelta calculate(
+        DeliveryPlan plan,
+        DeliveryExecution execution
+    ) {
+        int dateDiff = ChronoUnit.DAYS.between(
+            plan.getPlannedDate(),
+            execution.getActualDate()
+        );
+        int qtyDiff = execution.getActualQuantity() - 
+                     plan.getPlannedQuantity();
+        
+        return new DeliveryDelta(dateDiff, qtyDiff);
+    }
+}
+```
+
+Now we can do combinatorics:
+
+```java
+// ✓ GOOD: Compare one execution against multiple plans
+DeliveryExecution execution = executionRepo.findById(execId);
+
+DeliveryPlan originalPlan = planRepo.findByName("original");
+DeliveryPlan revisedPlan = planRepo.findByName("revised");
+DeliveryPlan optimisticPlan = planRepo.findByName("optimistic");
+
+DeliveryDeltaCalculator calculator = new DeliveryDeltaCalculator();
+
+DeliveryDelta vsOriginal = calculator.calculate(originalPlan, execution);
+DeliveryDelta vsRevised = calculator.calculate(revisedPlan, execution);
+DeliveryDelta vsOptimistic = calculator.calculate(optimisticPlan, execution);
+
+System.out.println("Same execution, different plans:");
+System.out.println("  vs Original: " + vsOriginal);
+System.out.println("  vs Revised: " + vsRevised);
+System.out.println("  vs Optimistic: " + vsOptimistic);
+```
+
+## Problem 3: Mutability Kills What-If Analysis
+
+```java
+// ❌ BAD: Mutable entity prevents safe experimentation
+DeliveryScheduleEntity schedule = scheduleRepo.findById(1L);
+
+// "What if we delivered on these 3 different dates?"
+LocalDate scenario1 = LocalDate.of(2024, 1, 18);
+LocalDate scenario2 = LocalDate.of(2024, 1, 20);
+LocalDate scenario3 = LocalDate.of(2024, 1, 25);
+
+// ❌ Each simulation MUTATES or COPIES
+DeliveryDelta delta1 = schedule.simulateIfDeliveredOn(scenario1, 100);
+DeliveryDelta delta2 = schedule.simulateIfDeliveredOn(scenario2, 100);
+DeliveryDelta delta3 = schedule.simulateIfDeliveredOn(scenario3, 100);
+
+// Problems:
+// - Created 3 copies internally (memory waste)
+// - Cannot run in parallel safely
+// - Risk of corrupting production data
+// - Code full of defensive copying
+```
+
+### The Correct Pattern
+
+```java
+// ✓ GOOD: Immutable data + pure functions = safe what-if analysis
+DeliveryPlan plan = planRepo.findById(planId);
+DeliveryDeltaCalculator calculator = new DeliveryDeltaCalculator();
+
+// Create hypothetical executions (cheap, immutable)
+DeliveryExecution scenario1 = new DeliveryExecution(
+    ExecutionId.generate(),
+    orderId,
+    LocalDate.of(2024, 1, 18),
+    100,
+    Instant.now()
+);
+
+DeliveryExecution scenario2 = new DeliveryExecution(
+    ExecutionId.generate(),
+    orderId,
+    LocalDate.of(2024, 1, 20),
+    100,
+    Instant.now()
+);
+
+DeliveryExecution scenario3 = new DeliveryExecution(
+    ExecutionId.generate(),
+    orderId,
+    LocalDate.of(2024, 1, 25),
+    100,
+    Instant.now()
+);
+
+// Calculate deltas (pure functions, no side effects)
+// Can run in parallel safely!
+DeliveryDelta delta1 = calculator.calculate(plan, scenario1);
+DeliveryDelta delta2 = calculator.calculate(plan, scenario2);
+DeliveryDelta delta3 = calculator.calculate(plan, scenario3);
+
+System.out.println("What-if scenarios:");
+System.out.println("  Deliver Jan 18: " + delta1);
+System.out.println("  Deliver Jan 20: " + delta2);
+System.out.println("  Deliver Jan 25: " + delta3);
+
+// No copies, no mutations, no risk!
+```
+
+## Real-World Test Demonstrating Problems
+
+From the actual test suite:
+
+```java
+@Test
+void problem2_cannot_compare_execution_with_different_plans() {
+    // ❌ BAD: One entity with plan and execution
+    DeliveryScheduleEntity schedule = new DeliveryScheduleEntity(
+        1L, 100L,
+        LocalDate.of(2024, 1, 20),  // Original plan
+        100
+    );
+    
+    // Execution happens
+    schedule.updateActualDelivery(LocalDate.of(2024, 1, 22), 95);
+    
+    // Calculate delta
+    DeliveryDelta delta1 = schedule.calculateDelta();
+    assertThat(delta1.dateDifferenceInDays()).isEqualTo(2);  // 2 days late
+    
+    // Business asks: "What if we had planned for Jan 25?"
+    // ❌ FORCED to mutate the entity
+    schedule.updatePlan(LocalDate.of(2024, 1, 25), 100, "manager");
+    
+    DeliveryDelta delta2 = schedule.calculateDelta();
+    assertThat(delta2.dateDifferenceInDays()).isEqualTo(-3);  // Now "early"!
+    
+    // ❌ PROBLEM:
+    // - We LOST the original plan!
+    // - We LOST the original delta!
+    // - We CORRUPTED historical data!
+    // - We cannot compare "same execution vs multiple plans"!
+}
+```
+
+## Summary: The Core Mistakes
+
+<Warning>
+
+### Mistake 1: Plan Reconstructed from Mutable Sources
+- **Problem**: No historical plans, no audit trail
+- **Solution**: Store immutable plan snapshots
+
+### Mistake 2: Plan and Execution in Same Entity
+- **Problem**: Cannot do combinatorics (N plans × M executions)
+- **Solution**: Separate immutable entities + stateless calculator
+
+### Mistake 3: Mutable Entities
+- **Problem**: Cannot safely simulate, experiment, or run parallel analysis
+- **Solution**: Immutable data + pure functions
+
+</Warning>
+
+## The Correct Architecture
+
+```java
+// ✓ GOOD: Immutable, separated, combinatoric
+
+@Immutable
+class Plan { /* immutable snapshot */ }
+
+@Immutable
+class Execution { /* immutable fact */ }
+
+class ToleranceStrategy { /* matching rules */ }
+
+class DeltaCalculator {
+    // Pure function: Plan × Execution × Tolerance → Delta
+    DeltaResult calculate(
+        Plan plan,
+        Execution execution,
+        ToleranceStrategy tolerance
+    ) {
+        // Stateless comparison logic
+    }
+}
+
+// ✓ Benefits:
+// - Historical plans preserved
+// - Combinatoric analysis (N × M)
+// - Safe what-if scenarios
+// - Parallel processing
+// - No defensive copying
+// - Clear audit trail
+```
+
+## Next Steps
+
+- See [Plan vs Execution](/examples/plan-vs-execution) for the **correct** implementation
+- Read [Resolution Mismatch](/examples/resolution-mismatch) for handling granularity differences
+- Learn about [Immutability in Domain Models](/concepts/immutability)
+
+<Note>
+  These anti-patterns are based on **real production systems** that failed. Learn from these mistakes to build maintainable plan vs execution logic.
+</Note>

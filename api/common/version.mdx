@@ -1,0 +1,162 @@
+---
+title: "Version"
+description: "Immutable version value object for tracking entity versions"
+---
+
+## Overview
+
+`Version` is a simple immutable record that encapsulates a version number as a `long` value. It's commonly used for optimistic locking and version tracking in domain entities.
+
+**Package:** `com.softwarearchetypes.common`
+
+**Source:** `/common/src/main/java/com/softwarearchetypes/common/Version.java:3`
+
+## Constructor
+
+```java
+public record Version(long value)
+```
+
+Creates a Version with the specified value.
+
+<ParamField path="value" type="long" required>
+  The version number. Can be any valid long value including negative numbers.
+</ParamField>
+
+## Static Factory Methods
+
+### initial
+
+```java
+public static Version initial()
+```
+
+Creates an initial Version with value 0.
+
+<ResponseField name="return" type="Version">
+  A Version instance with value 0
+</ResponseField>
+
+**Example:**
+```java
+Version version = Version.initial();
+assert version.value() == 0L;
+```
+
+### of
+
+```java
+public static Version of(long value)
+```
+
+Creates a Version with the specified value.
+
+<ParamField path="value" type="long" required>
+  The version number
+</ParamField>
+
+<ResponseField name="return" type="Version">
+  A Version instance with the specified value
+</ResponseField>
+
+**Example:**
+```java
+Version version = Version.of(42L);
+assert version.value() == 42L;
+
+// Works with any long value
+Version maxVersion = Version.of(Long.MAX_VALUE);
+Version minVersion = Version.of(Long.MIN_VALUE);
+Version negativeVersion = Version.of(-1L);
+```
+
+## Methods
+
+### value
+
+```java
+public long value()
+```
+
+Returns the version number.
+
+<ResponseField name="return" type="long">
+  The version number
+</ResponseField>
+
+**Example:**
+```java
+Version version = Version.of(123L);
+long value = version.value();
+assert value == 123L;
+```
+
+## Record Methods
+
+As a Java record, `Version` automatically provides:
+
+- `equals(Object)` - Two Versions are equal if they have the same value
+- `hashCode()` - Consistent with equals
+- `toString()` - Returns a string representation like `"Version[value=123]"`
+
+**Example:**
+```java
+Version v1 = Version.of(10L);
+Version v2 = Version.of(10L);
+Version v3 = Version.of(20L);
+
+assert v1.equals(v2); // true
+assert v1.hashCode() == v2.hashCode(); // true
+assert !v1.equals(v3); // false
+
+assert v1.toString().equals("Version[value=10]");
+```
+
+## Usage Examples
+
+### Initial Version
+
+```java
+Version version = Version.initial();
+assert version.value() == 0L;
+
+// Equivalent to
+Version sameVersion = Version.of(0L);
+assert version.equals(sameVersion);
+```
+
+### Version Comparison
+
+```java
+Version current = Version.of(5L);
+Version expected = Version.of(5L);
+
+if (current.equals(expected)) {
+    // Versions match - proceed with update
+}
+```
+
+### Incrementing Version
+
+```java
+Version current = Version.of(10L);
+Version next = Version.of(current.value() + 1);
+assert next.value() == 11L;
+```
+
+### Optimistic Locking Pattern
+
+```java
+public void updateEntity(Entity entity, Version expectedVersion) {
+    if (!entity.getVersion().equals(expectedVersion)) {
+        throw new OptimisticLockException(
+            "Version mismatch: expected " + expectedVersion.value() + 
+            " but was " + entity.getVersion().value()
+        );
+    }
+    
+    // Perform update
+    entity.setVersion(Version.of(expectedVersion.value() + 1));
+    repository.save(entity);
+}
+```

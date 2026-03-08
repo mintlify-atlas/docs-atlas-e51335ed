@@ -1,0 +1,318 @@
+---
+title: "Party Lifecycle"
+description: "Managing party roles and registered identifiers"
+---
+
+## Overview
+
+`Party` is the abstract base class for all party types (Organization, Person). It manages roles and registered identifiers with policy enforcement and event tracking.
+
+**Package:** `com.softwarearchetypes.party`
+
+**Source:** `/party/src/main/java/com/softwarearchetypes/party/Party.java:27`
+
+## Class Hierarchy
+
+```java
+public sealed abstract class Party permits Organization, Person
+```
+
+Party is a sealed class with two permitted subtypes:
+- `Organization`: Companies, organizational units
+- `Person`: Individual people
+
+## Constructor
+
+```java
+Party(PartyId partyId,
+     Set<Role> roles,
+     Set<RegisteredIdentifier> registeredIdentifiers,
+     Version version,
+     RegisteredIdentifierDefiningPolicy identifierPolicy,
+     PartyRoleDefiningPolicy roleDefiningPolicy)
+```
+
+<ParamField path="partyId" type="PartyId" required>
+  Unique party identifier
+</ParamField>
+
+<ParamField path="roles" type="Set<Role>" required>
+  Initial roles (can be empty)
+</ParamField>
+
+<ParamField path="registeredIdentifiers" type="Set<RegisteredIdentifier>" required>
+  Initial registered identifiers (can be empty)
+</ParamField>
+
+<ParamField path="version" type="Version" required>
+  Version for optimistic locking
+</ParamField>
+
+<ParamField path="identifierPolicy" type="RegisteredIdentifierDefiningPolicy" required>
+  Policy for validating identifiers
+</ParamField>
+
+<ParamField path="roleDefiningPolicy" type="PartyRoleDefiningPolicy" required>
+  Policy for validating roles
+</ParamField>
+
+## Accessor Methods
+
+### id
+
+```java
+final PartyId id()
+```
+
+Returns the party identifier.
+
+<ResponseField name="return" type="PartyId">
+  The party ID
+</ResponseField>
+
+### roles
+
+```java
+final Set<Role> roles()
+```
+
+Returns all roles assigned to this party.
+
+<ResponseField name="return" type="Set<Role>">
+  Immutable set of roles
+</ResponseField>
+
+### registeredIdentifiers
+
+```java
+final Set<RegisteredIdentifier> registeredIdentifiers()
+```
+
+Returns all registered identifiers.
+
+<ResponseField name="return" type="Set<RegisteredIdentifier>">
+  Immutable set of registered identifiers
+</ResponseField>
+
+### version
+
+```java
+final Version version()
+```
+
+Returns the current version.
+
+<ResponseField name="return" type="Version">
+  The version for optimistic locking
+</ResponseField>
+
+### events
+
+```java
+List<PartyRelatedEvent> events()
+```
+
+Returns all events recorded by this party.
+
+<ResponseField name="return" type="List<PartyRelatedEvent>">
+  List of all events
+</ResponseField>
+
+### publishedEvents
+
+```java
+List<PublishedEvent> publishedEvents()
+```
+
+Returns only events marked for publishing.
+
+<ResponseField name="return" type="List<PublishedEvent>">
+  List of published events
+</ResponseField>
+
+## Role Management
+
+### add (Role)
+
+```java
+Result<String, Party> add(Role role)
+```
+
+Adds a role to this party. The operation:
+- Checks if role is allowed by policy
+- If already present: records skip event (idempotent)
+- If new: adds role and records success event
+
+<ParamField path="role" type="Role" required>
+  The role to add
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Party>">
+  Success with updated Party, or failure with "POLICY_NOT_MET"
+</ResponseField>
+
+**Example:**
+```java
+Role customerRole = Role.of("CUSTOMER");
+
+Result<String, Party> result = party.add(customerRole);
+
+if (result.success()) {
+    party = result.getSuccess();
+    // Event recorded: RoleAdded
+    assert party.roles().contains(customerRole);
+} else {
+    System.out.println("Failed: " + result.getFailure());
+}
+
+// Adding same role again is idempotent
+Result<String, Party> result2 = party.add(customerRole);
+assert result2.success();
+// Event recorded: RoleAdditionSkipped
+```
+
+### remove (Role)
+
+```java
+Result<String, Party> remove(Role role)
+```
+
+Removes a role from this party. The operation is always successful:
+- If present: removes role and records removal event
+- If not present: records skip event (idempotent)
+
+<ParamField path="role" type="Role" required>
+  The role to remove
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Party>">
+  Always succeeds with updated Party
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Party> result = party.remove(customerRole);
+
+party = result.getSuccess();
+assert !party.roles().contains(customerRole);
+// Event recorded: RoleRemoved or RoleRemovalSkipped
+```
+
+## Registered Identifier Management
+
+### add (RegisteredIdentifier)
+
+```java
+Result<String, Party> add(RegisteredIdentifier identifier)
+```
+
+Adds a registered identifier. The operation:
+- Checks if identifier is allowed by policy
+- If already present: records skip event (idempotent)
+- If new: adds identifier and records success event
+
+<ParamField path="identifier" type="RegisteredIdentifier" required>
+  The identifier to add
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Party>">
+  Success with updated Party, or failure with "IDENTIFIER_NOT_ALLOWED_FOR_PARTY_TYPE"
+</ResponseField>
+
+**Example:**
+```java
+// For a Person
+PersonalIdentificationNumber pesel = new PersonalIdentificationNumber("12345678901");
+
+Result<String, Party> result = person.add(pesel);
+
+if (result.success()) {
+    person = result.getSuccess();
+    // Event recorded: RegisteredIdentifierAdded
+    assert person.registeredIdentifiers().contains(pesel);
+} else {
+    System.out.println("Failed: " + result.getFailure());
+}
+
+// For an Organization
+TaxNumber taxId = new TaxNumber("1234567890");
+
+Result<String, Party> result2 = company.add(taxId);
+// Event recorded: RegisteredIdentifierAdded
+```
+
+### canRegister
+
+```java
+boolean canRegister(RegisteredIdentifier identifier)
+```
+
+Checks if a given identifier can be registered for this party according to the policy.
+
+<ParamField path="identifier" type="RegisteredIdentifier" required>
+  The identifier to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if identifier is allowed, `false` otherwise
+</ResponseField>
+
+**Example:**
+```java
+PersonalIdentificationNumber pesel = new PersonalIdentificationNumber("12345678901");
+
+if (person.canRegister(pesel)) {
+    person.add(pesel);
+}
+
+// Tax numbers not allowed for persons
+TaxNumber taxId = new TaxNumber("1234567890");
+assert !person.canRegister(taxId); // false
+```
+
+### remove (RegisteredIdentifier)
+
+```java
+Result<String, Party> remove(RegisteredIdentifier identifier)
+```
+
+Removes a registered identifier. The operation is always successful:
+- If present: removes identifier and records removal event
+- If not present: records skip event (idempotent)
+
+<ParamField path="identifier" type="RegisteredIdentifier" required>
+  The identifier to remove
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Party>">
+  Always succeeds with updated Party
+</ResponseField>
+
+## Events
+
+The Party class generates the following events:
+
+### Role Events
+
+- `RoleAdded`: Role successfully added
+- `RoleAdditionSkipped`: Role already present
+- `RoleRemoved`: Role successfully removed
+- `RoleRemovalSkipped`: Role was not present
+
+### Identifier Events
+
+- `RegisteredIdentifierAdded`: Identifier successfully added
+- `RegisteredIdentifierAdditionSkipped`: Identifier already present
+- `RegisteredIdentifierRemoved`: Identifier successfully removed
+- `RegisteredIdentifierRemovalSkipped`: Identifier was not present
+
+## Policies
+
+### RegisteredIdentifierDefiningPolicy
+
+Controls which identifiers can be registered for a party type.
+
+**Default policies:**
+```java
+// Allow all identifiers
+Regis

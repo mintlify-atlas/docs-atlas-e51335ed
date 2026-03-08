@@ -1,0 +1,200 @@
+---
+title: "Introduction to Archetypy Oprogramowania"
+description: "A comprehensive Java library implementing software design archetypes and patterns for building enterprise business applications"
+---
+
+## What is Archetypy Oprogramowania?
+
+Archetypy Oprogramowania is a production-ready Java library that implements battle-tested software design patterns and archetypes. It provides a comprehensive set of modules for building robust enterprise business applications with proper domain modeling, type safety, and functional programming patterns.
+
+<Note>
+  **Built with Java 21** - Archetypy Oprogramowania leverages modern Java features including records, pattern matching, and sealed types for clean, maintainable code.
+</Note>
+
+## Why Use Archetypy Oprogramowania?
+
+Building enterprise business applications requires solving common problems repeatedly. Archetypy Oprogramowania provides proven solutions:
+
+<CardGroup cols={2}>
+  <Card title="Battle-Tested Patterns" icon="shield-check">
+    Implementations based on industry-standard archetypes from Martin Fowler's Analysis Patterns and other proven sources
+  </Card>
+  <Card title="Type-Safe Domain Modeling" icon="lock">
+    Leverage Java's type system with Money, Quantity, Result monad, and strongly-typed identifiers
+  </Card>
+  <Card title="Functional Error Handling" icon="circle-check">
+    Elegant error handling with Result monad - no null pointers, no unchecked exceptions
+  </Card>
+  <Card title="Modular Architecture" icon="cubes">
+    Use only the modules you need - from accounting to ordering to inventory management
+  </Card>
+</CardGroup>
+
+## Core Modules
+
+Archetypy Oprogramowania consists of 11 specialized modules:
+
+### Foundation Modules
+
+<AccordionGroup>
+  <Accordion title="Common" icon="wrench">
+    Core utilities used across all modules:
+    - **Result monad** for functional error handling
+    - **Preconditions** for runtime validation
+    - **Event system** for domain events
+    - **Versioning** support
+  </Accordion>
+
+  <Accordion title="Quantity" icon="ruler">
+    Type-safe measurements and monetary values:
+    - **Quantity** type with unit conversions
+    - **Money** type with proper currency handling
+    - **Unit** abstraction for measurements
+    - Integration with JavaMoney (JSR 354)
+  </Accordion>
+</AccordionGroup>
+
+### Business Modules
+
+<AccordionGroup>
+  <Accordion title="Accounting" icon="book">
+    Full double-entry accounting system:
+    - Chart of accounts management
+    - Transaction processing with proper debits/credits
+    - Account balances and projections
+    - Transaction reversal support
+  </Accordion>
+
+  <Accordion title="Pricing" icon="calculator">
+    Sophisticated pricing engine:
+    - Multiple calculator types (fixed, percentage, tiered)
+    - Parameter-based pricing
+    - Price interpretation modes
+    - Pricing composition and strategies
+  </Accordion>
+
+  <Accordion title="Product" icon="box">
+    Product catalog management:
+    - Product definitions with constraints
+    - Batch management and tracking
+    - Product categorization
+    - Feature-based product modeling
+  </Accordion>
+
+  <Accordion title="Party" icon="users">
+    Organization and party management:
+    - Address management with lifecycle
+    - Party capabilities and roles
+    - Contact information tracking
+    - Party relationship modeling
+  </Accordion>
+
+  <Accordion title="Inventory" icon="warehouse">
+    Comprehensive inventory management:
+    - Product instance tracking (serial numbers, batches)
+    - Resource-based availability
+    - Temporal and pool-based inventory
+    - Lock and reservation support
+  </Accordion>
+
+  <Accordion title="Ordering" icon="cart-shopping">
+    Complete order processing system:
+    - Order lifecycle management (draft → confirmed → fulfilled)
+    - Multi-party orders with roles
+    - Line-level specifications and pricing
+    - Integration with inventory, payment, and fulfillment
+  </Accordion>
+</AccordionGroup>
+
+### Advanced Modules
+
+<AccordionGroup>
+  <Accordion title="Graphs" icon="diagram-project">
+    Graph algorithms and data structures:
+    - Cycle detection
+    - Influence analysis
+    - Scheduling algorithms
+    - User journey modeling
+  </Accordion>
+
+  <Accordion title="Rules" icon="gavel">
+    Rule engine and scoring:
+    - Logical predicates with composition
+    - Event-based rule engine
+    - Scoring algebra (simple, fuzzy, explainable)
+    - Discount rule chains
+  </Accordion>
+
+  <Accordion title="Plan vs Execution" icon="chart-line">
+    Planning and execution tracking:
+    - Plan definitions
+    - Execution monitoring
+    - Variance analysis
+    - Resolution mismatch detection
+  </Accordion>
+</AccordionGroup>
+
+## Design Philosophy
+
+Archetypy Oprogramowania follows these core principles:
+
+<Steps>
+  <Step title="Domain-Driven Design">
+    Rich domain models with behavior, not anemic data structures. Entities and value objects properly modeled.
+  </Step>
+  <Step title="Functional Programming Patterns">
+    Immutable data structures where appropriate, Result monad for error handling, pure functions for calculations.
+  </Step>
+  <Step title="Type Safety">
+    Strong typing for domain concepts - Money vs double, OrderId vs String, proper units for quantities.
+  </Step>
+  <Step title="Testability">
+    Clean separation of concerns, dependency injection support, comprehensive test coverage included.
+  </Step>
+</Steps>
+
+## Example Use Cases
+
+Archetypy Oprogramowania is suitable for:
+
+- **E-commerce platforms** - Order processing, inventory, pricing
+- **ERP systems** - Accounting, party management, product catalogs
+- **Booking systems** - Temporal inventory, reservations, scheduling
+- **Financial applications** - Double-entry accounting, money handling
+- **Supply chain systems** - Inventory tracking, batch management
+
+## License
+
+<Warning>
+  Archetypy Oprogramowania is licensed under **CC BY-NC-SA 4.0** (Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International).
+  
+  - ✅ Free for learning and non-commercial projects
+  - ❌ Commercial use requires permission from the authors
+  
+  See the [LICENSE](https://github.com/Archetypy-Oprogramowania/archetypes/blob/main/LICENSE) file for details.
+</Warning>
+
+## Authors
+
+Archetypy Oprogramowania is maintained by:
+
+- **Bartłomiej Słota**
+- **Jakub Pilimon**
+- **Sławomir Sobótka**
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Learn how to add Archetypy Oprogramowania to your Maven project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first order processing application in 5 minutes
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Understand the architectural patterns and design decisions
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/common/result">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>

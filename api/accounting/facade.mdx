@@ -1,0 +1,452 @@
+---
+title: "AccountingFacade"
+description: "Main entry point for accounting operations including account management, transactions, and balance queries"
+---
+
+## Overview
+
+The `AccountingFacade` is the primary interface for all accounting operations in the system. It provides methods for creating accounts, executing transactions, querying balances, and managing financial data using double-entry bookkeeping principles.
+
+**Package:** `com.softwarearchetypes.accounting`
+
+## Constructor
+
+```java
+AccountingFacade(
+    Clock clock,
+    AccountRepository accountRepository,
+    AccountViewQueries accountViewQueries,
+    TransactionRepository transactionRepository,
+    TransactionBuilderFactory transactionBuilderFactory,
+    EventPublisher eventPublisher
+)
+```
+
+Package-private constructor. Use `AccountingConfiguration` to obtain an instance.
+
+## Account Management
+
+### createAccount
+
+Creates a single account.
+
+```java
+public Result<String, AccountId> createAccount(CreateAccount request)
+```
+
+<ParamField path="request" type="CreateAccount" required>
+  Account creation request containing:
+  - `accountId`: Unique identifier for the account
+  - `name`: Human-readable account name
+  - `type`: Account type (ASSET, LIABILITY, EXPENSE, REVENUE, OFF_BALANCE)
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, AccountId>">
+  - **Success**: Returns the created `AccountId`
+  - **Failure**: Returns error message if account already exists
+</ResponseField>
+
+**Example:**
+
+```java
+CreateAccount request = CreateAccount.generateAssetAccount(
+    AccountId.generate(),
+    "Cash Account"
+);
+Result<String, AccountId> result = facade.createAccount(request);
+```
+
+### createAccounts
+
+Creates multiple accounts in a single operation.
+
+```java
+public Result<String, Set<AccountId>> createAccounts(Set<CreateAccount> requests)
+```
+
+<ParamField path="requests" type="Set<CreateAccount>" required>
+  Set of account creation requests
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, Set<AccountId>>">
+  - **Success**: Returns set of created account IDs
+  - **Failure**: Returns error if any account already exists
+</ResponseField>
+
+### createAccountsWithInitialBalances
+
+Creates accounts and initializes them with opening balances.
+
+```java
+public Result<String, Set<AccountId>> createAccountsWithInitialBalances(
+    Set<CreateAccount> requests,
+    AccountAmounts accountAmounts
+)
+```
+
+<ParamField path="requests" type="Set<CreateAccount>" required>
+  Account creation requests
+</ParamField>
+
+<ParamField path="accountAmounts" type="AccountAmounts" required>
+  Initial balances for the accounts (positive for credits, negative for debits)
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, Set<AccountId>>">
+  - **Success**: Returns set of created account IDs
+  - **Failure**: Returns error message if creation or initialization fails
+</ResponseField>
+
+## Balance Queries
+
+### balance
+
+Retrieves the current balance of an account.
+
+```java
+public Optional<Money> balance(AccountId accountId)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  The account identifier
+</ParamField>
+
+<ResponseField name="Optional" type="Optional<Money>">
+  The current account balance, or empty if account doesn't exist
+</ResponseField>
+
+### balanceAsOf
+
+Retrieves the account balance as of a specific point in time.
+
+```java
+public Optional<Money> balanceAsOf(AccountId accountId, Instant when)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  The account identifier
+</ParamField>
+
+<ParamField path="when" type="Instant" required>
+  The point in time for balance calculation
+</ParamField>
+
+<ResponseField name="Optional" type="Optional<Money>">
+  The account balance at the specified time, or empty if account doesn't exist
+</ResponseField>
+
+**Example:**
+
+```java
+Instant lastMonth = Instant.now().minus(30, ChronoUnit.DAYS);
+Optional<Money> historicalBalance = facade.balanceAsOf(accountId, lastMonth);
+```
+
+### balances
+
+Retrieves current balances for multiple accounts.
+
+```java
+public Balances balances(Set<AccountId> accounts)
+```
+
+<ParamField path="accounts" type="Set<AccountId>" required>
+  Set of account identifiers
+</ParamField>
+
+<ResponseField name="Balances" type="Balances">
+  Map of account IDs to their current balances
+</ResponseField>
+
+### balancesAsOf
+
+Retrieves balances for multiple accounts at a specific point in time.
+
+```java
+public Balances balancesAsOf(Set<AccountId> accounts, Instant when)
+```
+
+<ParamField path="accounts" type="Set<AccountId>" required>
+  Set of account identifiers
+</ParamField>
+
+<ParamField path="when" type="Instant" required>
+  The point in time for balance calculation
+</ParamField>
+
+<ResponseField name="Balances" type="Balances">
+  Map of account IDs to their balances at the specified time
+</ResponseField>
+
+## Transaction Operations
+
+### transaction
+
+Creates a new transaction builder for constructing complex transactions.
+
+```java
+public TransactionBuilder transaction()
+```
+
+<ResponseField name="TransactionBuilder" type="TransactionBuilder">
+  A builder for constructing and executing transactions
+</ResponseField>
+
+**Example:**
+
+```java
+Transaction tx = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("payment")
+    .executing()
+    .debitFrom(sourceAccount, Money.of(100, "PLN"))
+    .creditTo(targetAccount, Money.of(100, "PLN"))
+    .build();
+```
+
+### execute
+
+Executes one or more transactions.
+
+```java
+public Result<String, TransactionId> execute(Transaction transaction)
+public Result<String, Set<TransactionId>> execute(Transaction... transactions)
+```
+
+<ParamField path="transaction" type="Transaction" required>
+  The transaction to execute
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, TransactionId>">
+  - **Success**: Returns the transaction ID
+  - **Failure**: Returns error message if execution fails
+</ResponseField>
+
+**Note:** All account updates use optimistic locking to prevent concurrent modification issues.
+
+### transfer
+
+Performs a simple transfer between two accounts.
+
+```java
+public Result<String, TransactionId> transfer(
+    AccountId from,
+    AccountId to,
+    Money amount,
+    Instant occurredAt,
+    Instant appliesAt
+)
+
+public Result<String, TransactionId> transfer(
+    AccountId from,
+    AccountId to,
+    Money amount,
+    Instant occurredAt,
+    Instant appliesAt,
+    MetaData metaData
+)
+```
+
+<ParamField path="from" type="AccountId" required>
+  Source account to debit
+</ParamField>
+
+<ParamField path="to" type="AccountId" required>
+  Target account to credit
+</ParamField>
+
+<ParamField path="amount" type="Money" required>
+  Amount to transfer
+</ParamField>
+
+<ParamField path="occurredAt" type="Instant" required>
+  When the transfer occurred in real time
+</ParamField>
+
+<ParamField path="appliesAt" type="Instant" required>
+  When the transfer applies for accounting purposes
+</ParamField>
+
+<ParamField path="metaData" type="MetaData">
+  Optional metadata to attach to the transaction
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, TransactionId>">
+  - **Success**: Returns the transaction ID
+  - **Failure**: Returns error message if transfer fails
+</ResponseField>
+
+**Example:**
+
+```java
+Result<String, TransactionId> result = facade.transfer(
+    fromAccount,
+    toAccount,
+    Money.of(500, "PLN"),
+    Instant.now(),
+    Instant.now()
+);
+```
+
+### handle (ExecuteTransactionCommand)
+
+Executes a transaction from a command object.
+
+```java
+public Result<String, TransactionId> handle(ExecuteTransactionCommand command)
+```
+
+<ParamField path="command" type="ExecuteTransactionCommand" required>
+  Command containing:
+  - `transactionType`: Type of transaction
+  - `occurredAt`: When transaction occurred
+  - `appliesAt`: When transaction applies
+  - `entries`: List of credit/debit entries
+  - `metadata`: Optional transaction metadata
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, TransactionId>">
+  - **Success**: Returns the transaction ID
+  - **Failure**: Returns error message if execution fails
+</ResponseField>
+
+### handle (ReverseTransactionCommand)
+
+Reverses a previously executed transaction.
+
+```java
+public Result<String, TransactionId> handle(ReverseTransactionCommand command)
+```
+
+<ParamField path="command" type="ReverseTransactionCommand" required>
+  Command containing:
+  - `refTransactionId`: ID of transaction to reverse
+  - `occurredAt`: When reversal occurred
+  - `appliesAt`: When reversal applies
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, TransactionId>">
+  - **Success**: Returns the reversal transaction ID
+  - **Failure**: Returns error message if reversal fails
+</ResponseField>
+
+## Query Operations
+
+### findAccount
+
+Retrieves detailed account information including entries.
+
+```java
+public Optional<AccountView> findAccount(AccountId accountId)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  The account identifier
+</ParamField>
+
+<ResponseField name="Optional" type="Optional<AccountView>">
+  Complete account view with balance and entry history, or empty if not found
+</ResponseField>
+
+### findAccounts
+
+Retrieves multiple accounts by their IDs.
+
+```java
+public List<AccountView> findAccounts(Set<AccountId> accountIds)
+```
+
+<ParamField path="accountIds" type="Set<AccountId>" required>
+  Set of account identifiers
+</ParamField>
+
+<ResponseField name="List" type="List<AccountView>">
+  List of account views for existing accounts
+</ResponseField>
+
+### findAll
+
+Retrieves all accounts in the system.
+
+```java
+public List<AccountView> findAll()
+```
+
+<ResponseField name="List" type="List<AccountView>">
+  List of all account views
+</ResponseField>
+
+### findTransactionBy
+
+Retrieves complete transaction details including all entries.
+
+```java
+public Optional<TransactionView> findTransactionBy(TransactionId transactionId)
+```
+
+<ParamField path="transactionId" type="TransactionId" required>
+  The transaction identifier
+</ParamField>
+
+<ResponseField name="Optional" type="Optional<TransactionView>">
+  Complete transaction view with all entries and accounts, or empty if not found
+</ResponseField>
+
+### findTransactionIdsFor
+
+Finds all transaction IDs associated with an account.
+
+```java
+public List<TransactionId> findTransactionIdsFor(AccountId accountId)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  The account identifier
+</ParamField>
+
+<ResponseField name="List" type="List<TransactionId>">
+  List of transaction IDs that affected the account
+</ResponseField>
+
+## Projection Accounts
+
+### createProjectingAccount
+
+Creates a virtual account that projects (aggregates) entries from other accounts based on filters.
+
+```java
+public Result<String, AccountId> createProjectingAccount(
+    AccountId projecting,
+    AccountEntryFilter accountEntryFilter,
+    String description
+)
+```
+
+<ParamField path="projecting" type="AccountId" required>
+  ID for the projection account
+</ParamField>
+
+<ParamField path="accountEntryFilter" type="AccountEntryFilter" required>
+  Filter defining which entries to include
+</ParamField>
+
+<ParamField path="description" type="String" required>
+  Human-readable description of the projection
+</ParamField>
+
+<ResponseField name="Result" type="Result<String, AccountId>">
+  - **Success**: Returns the projection account ID
+  - **Failure**: Returns error message if creation fails
+</ResponseField>
+
+**Use Case:** Create aggregated views like "All Revenue from Product X" or "Total Expenses by Department Y".
+
+## Related Types
+
+- [Account](/api/accounting/account) - Core account entity
+- [Transaction](/api/accounting/transaction) - Transaction entity
+- [Entry](/api/accounting/entry) - Individual accounting entries
+- `Result<F, S>` - Result monad for error handling
+- `Money` - Monetary value with currency
+- `Instant` - Point in time

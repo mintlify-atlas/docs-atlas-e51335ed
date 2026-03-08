@@ -1,0 +1,490 @@
+---
+title: Influence Analysis
+description: Graph-based influence detection and zone analysis for reservation conflicts
+---
+
+## Overview
+
+The influence module provides tools for analyzing how reservations influence each other based on physics processes, laboratory adjacency, and infrastructure connections. It uses graph algorithms to detect conflicts, identify influence zones, and find critical reservations.
+
+## Key Components
+
+### InfluenceAnalyzer
+
+Analyzes influence relationships between reservations.
+
+```java
+package com.softwarearchetypes.graphs.influence;
+
+class InfluanceAnalyzer {
+    private final InfluenceMap influenceMap;
+    
+    InfluanceAnalyzer(InfluenceMap influenceMap);
+    
+    int countConflicts(Reservation newReservation, 
+                       Set<Reservation> existingReservations);
+    
+    Set<InfluenceZone> analyzeInfluenceZones(Set<Reservation> reservations);
+    
+    InfluenceZone findInfluenceZone(Reservation reservation, 
+                                    Set<Reservation> allReservations);
+    
+    BridgingReservations identifyCriticalReservations(Set<Reservation> reservations);
+}
+```
+
+#### Constructor
+
+<ParamField path="influenceMap" type="InfluenceMap" required>
+  Map defining influence relationships based on physics, labs, and infrastructure
+</ParamField>
+
+#### countConflicts()
+
+Counts how many existing reservations would be influenced by a new reservation.
+
+```java
+int countConflicts(Reservation newReservation, 
+                  Set<Reservation> existingReservations)
+```
+
+<ParamField path="newReservation" type="Reservation" required>
+  The new reservation to check
+</ParamField>
+
+<ParamField path="existingReservations" type="Set<Reservation>" required>
+  Set of currently active reservations
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Number of existing reservations that would be influenced
+</ResponseField>
+
+**Use Case:**
+Before accepting a reservation, count conflicts to determine if it should be allowed or require special approval.
+
+**Example:**
+```java
+InfluenceAnalyzer analyzer = new InfluenceAnalyzer(influenceMap);
+
+Reservation newReservation = new Reservation(
+    PhysicsProcess.CHEMICAL_REACTION,
+    Laboratory.LAB_A,
+    timeSlot
+);
+
+int conflicts = analyzer.countConflicts(newReservation, activeReservations);
+
+if (conflicts > 5) {
+    throw new TooManyConflictsException(
+        "Reservation would conflict with " + conflicts + " existing reservations"
+    );
+}
+```
+
+#### analyzeInfluenceZones()
+
+Partitions reservations into influence zones (connected components in influence graph).
+
+```java
+Set<InfluenceZone> analyzeInfluenceZones(Set<Reservation> reservations)
+```
+
+<ParamField path="reservations" type="Set<Reservation>" required>
+  All reservations to analyze
+</ParamField>
+
+<ResponseField name="return" type="Set<InfluenceZone>">
+  Set of influence zones, each containing reservations that influence each other
+</ResponseField>
+
+**Algorithm:**
+1. Build influence graph with reservations as vertices
+2. Add edges between reservations that influence each other
+3. Find connected components using ConnectivityInspector
+4. Each component becomes an InfluenceZone
+
+**Use Case:**
+Identify independent groups of reservations that can be managed separately.
+
+**Example:**
+```java
+Set<InfluenceZone> zones = analyzer.analyzeInfluenceZones(allReservations);
+
+System.out.println("Found " + zones.size() + " independent influence zones");
+
+for (InfluenceZone zone : zones) {
+    System.out.println("Zone with " + zone.size() + " reservations");
+    // Can optimize/schedule each zone independently
+}
+```
+
+#### findInfluenceZone()
+
+Finds the influence zone containing a specific reservation.
+
+```java
+InfluenceZone findInfluenceZone(Reservation reservation, 
+                               Set<Reservation> allReservations)
+```
+
+<ParamField path="reservation" type="Reservation" required>
+  The reservation to find zone for
+</ParamField>
+
+<ParamField path="allReservations" type="Set<Reservation>" required>
+  All reservations in the system
+</ParamField>
+
+<ResponseField name="return" type="InfluenceZone">
+  The influence zone containing the reservation and all directly/indirectly influenced reservations
+</ResponseField>
+
+**Use Case:**
+When cancelling a reservation, find all other reservations that might be affected.
+
+**Example:**
+```java
+InfluenceZone zone = analyzer.findInfluenceZone(targetReservation, allReservations);
+
+// Notify all affected reservation owners
+for (Reservation affected : zone.reservations()) {
+    notificationService.send(affected.owner(), 
+        "A reservation in your influence zone was cancelled");
+}
+```
+
+#### identifyCriticalReservations()
+
+Identifies bridging reservations (cut vertices) whose removal would disconnect the influence graph.
+
+```java
+BridgingReservations identifyCriticalReservations(Set<Reservation> reservations)
+```
+
+<ParamField path="reservations" type="Set<Reservation>" required>
+  All reservations to analyze
+</ParamField>
+
+<ResponseField name="return" type="BridgingReservations">
+  Set of critical reservations that connect otherwise separate influence zones
+</ResponseField>
+
+**Algorithm:**
+Uses BiconnectivityInspector to find cut vertices (articulation points) in the influence graph.
+
+**Use Case:**
+Identify reservations that should not be cancelled as they're critical connectors.
+
+**Example:**
+```java
+BridgingReservations critical = analyzer.identifyCriticalReservations(allReservations);
+
+for (Reservation reservation : critical.reservations()) {
+    // Mark as high priority - cancellation would split influence zones
+    reservation.markCritical();
+}
+```
+
+### InfluenceMap
+
+Defines which reservations influence each other based on physics and infrastructure.
+
+```java
+package com.softwarearchetypes.graphs.influence;
+
+class InfluenceMap {
+    private final Graph<InfluenceUnit, DefaultEdge> graph;
+    
+    static InfluenceMap of(PhysicsInfluence physicsInfluence,
+                          InfrastructureInfluence infrastructureInfluence,
+                          Set<Laboratory> laboratories);
+    
+    static InfluenceMap of(PhysicsInfluence physicsInfluence,
+                          InfrastructureInfluence infrastructureInfluence,
+                          LaboratoryAdjacency laboratoryAdjacency);
+    
+    boolean influences(PhysicsProcess fromProcess, Laboratory fromLab,
+                      PhysicsProcess toProcess, Laboratory toLab);
+    
+    boolean influences(Reservation from, Reservation to);
+    
+    static Builder builder();
+}
+```
+
+#### Static Factory: of() with Cartesian Product
+
+Creates an influence map using Cartesian product of physics and laboratories.
+
+```java
+static InfluenceMap of(
+    PhysicsInfluence physicsInfluence,
+    InfrastructureInfluence infrastructureInfluence,
+    Set<Laboratory> laboratories
+)
+```
+
+<ParamField path="physicsInfluence" type="PhysicsInfluence" required>
+  Defines which physics processes influence each other
+</ParamField>
+
+<ParamField path="infrastructureInfluence" type="InfrastructureInfluence" required>
+  Defines influence through shared infrastructure (HVAC, power, etc.)
+</ParamField>
+
+<ParamField path="laboratories" type="Set<Laboratory>" required>
+  All laboratories in the facility
+</ParamField>
+
+<ResponseField name="return" type="InfluenceMap">
+  Influence map where any physics influence applies to ALL laboratory pairs (Cartesian product)
+</ResponseField>
+
+**Use Case:**
+When physics influences are independent of laboratory location.
+
+#### Static Factory: of() with Adjacency
+
+Creates an influence map using laboratory adjacency constraints.
+
+```java
+static InfluenceMap of(
+    PhysicsInfluence physicsInfluence,
+    InfrastructureInfluence infrastructureInfluence,
+    LaboratoryAdjacency laboratoryAdjacency
+)
+```
+
+<ParamField path="laboratoryAdjacency" type="LaboratoryAdjacency" required>
+  Defines which laboratories are adjacent to each other
+</ParamField>
+
+<ResponseField name="return" type="InfluenceMap">
+  Influence map where physics influences only apply between adjacent laboratories
+</ResponseField>
+
+**Use Case:**
+When physics influences only matter for nearby laboratories (e.g., noise, vibration, electromagnetic interference).
+
+**Example:**
+```java
+// Define physics influences
+PhysicsInfluence physics = PhysicsInfluence.builder()
+    .addInfluence(CHEMICAL_REACTION, ELECTRON_MICROSCOPY)  // Fumes affect microscope
+    .addInfluence(MECHANICAL_TESTING, PRECISION_MEASUREMENT)  // Vibration affects precision
+    .build();
+
+// Define adjacent labs
+LaboratoryAdjacency adjacency = LaboratoryAdjacency.builder()
+    .addAdjacency(LAB_A, LAB_B)
+    .addAdjacency(LAB_B, LAB_C)
+    .build();
+
+// Infrastructure influences (shared systems)
+InfrastructureInfluence infrastructure = InfrastructureInfluence.builder()
+    .addSharedHVAC(LAB_A, LAB_D)  // Share air handling
+    .build();
+
+InfluenceMap map = InfluenceMap.of(physics, infrastructure, adjacency);
+```
+
+#### influences() - Process and Lab
+
+Checks if one process/lab combination influences another.
+
+```java
+boolean influences(PhysicsProcess fromProcess, Laboratory fromLab,
+                  PhysicsProcess toProcess, Laboratory toLab)
+```
+
+<ParamField path="fromProcess" type="PhysicsProcess" required>
+  Source physics process
+</ParamField>
+
+<ParamField path="fromLab" type="Laboratory" required>
+  Source laboratory
+</ParamField>
+
+<ParamField path="toProcess" type="PhysicsProcess" required>
+  Target physics process
+</ParamField>
+
+<ParamField path="toLab" type="Laboratory" required>
+  Target laboratory
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the from process/lab influences the to process/lab
+</ResponseField>
+
+#### influences() - Reservations
+
+Checks if one reservation influences another.
+
+```java
+boolean influences(Reservation from, Reservation to)
+```
+
+<ParamField path="from" type="Reservation" required>
+  Source reservation
+</ParamField>
+
+<ParamField path="to" type="Reservation" required>
+  Target reservation
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if from reservation influences to reservation
+</ResponseField>
+
+**Example:**
+```java
+Reservation chemReaction = new Reservation(CHEMICAL_REACTION, LAB_A, slot1);
+Reservation microscopy = new Reservation(ELECTRON_MICROSCOPY, LAB_B, slot2);
+
+if (influenceMap.influences(chemReaction, microscopy)) {
+    System.out.println("Chemical reaction will affect electron microscopy");
+}
+```
+
+### Builder
+
+Fluent builder for creating influence maps.
+
+```java
+InfluenceMap map = InfluenceMap.builder()
+    .withPhysics(physicsInfluence)
+    .withInfrastructure(infrastructureInfluence)
+    .withLaboratories(Set.of(LAB_A, LAB_B, LAB_C))  // Cartesian product
+    .build();
+
+// Or with adjacency
+InfluenceMap map = InfluenceMap.builder()
+    .withPhysics(physicsInfluence)
+    .withInfrastructure(infrastructureInfluence)
+    .withLaboratoryAdjacency(adjacency)  // Adjacency-based
+    .build();
+```
+
+## Usage Examples
+
+### Conflict Detection Before Booking
+
+```java
+public class ReservationService {
+    private final InfluenceAnalyzer analyzer;
+    private final ReservationRepository repository;
+    
+    public void makeReservation(Reservation newReservation) {
+        Set<Reservation> existing = repository.findActiveReservations();
+        
+        int conflicts = analyzer.countConflicts(newReservation, existing);
+        
+        if (conflicts > 0) {
+            throw new ConflictException(
+                "Reservation conflicts with " + conflicts + " existing reservations"
+            );
+        }
+        
+        repository.save(newReservation);
+    }
+}
+```
+
+### Analyzing Influence Zones
+
+```java
+public class FacilityOptimizer {
+    private final InfluenceAnalyzer analyzer;
+    
+    public void optimizeSchedule(Set<Reservation> reservations) {
+        Set<InfluenceZone> zones = analyzer.analyzeInfluenceZones(reservations);
+        
+        System.out.println("Found " + zones.size() + " independent zones");
+        
+        // Optimize each zone independently (can parallelize)
+        zones.parallelStream().forEach(zone -> {
+            optimizeSingleZone(zone);
+        });
+    }
+}
+```
+
+### Identifying Critical Reservations
+
+```java
+public class ReservationManager {
+    private final InfluenceAnalyzer analyzer;
+    
+    public void assessCancellationImpact(Reservation target) {
+        Set<Reservation> all = getAllReservations();
+        
+        BridgingReservations critical = 
+            analyzer.identifyCriticalReservations(all);
+        
+        if (critical.contains(target)) {
+            System.out.println(
+                "WARNING: This is a critical reservation that bridges " +
+                "multiple influence zones. Cancellation will have wide impact."
+            );
+        }
+    }
+}
+```
+
+### Building Influence Maps
+
+```java
+// Example: Research facility with multiple labs
+PhysicsInfluence physics = PhysicsInfluence.builder()
+    .addInfluence(HIGH_MAGNETIC_FIELD, ELECTRON_MICROSCOPY)
+    .addInfluence(X_RAY_DIFFRACTION, PHOTOSENSITIVE_EXPERIMENTS)
+    .addInfluence(CHEMICAL_VAPOR, ANY_PROCESS)  // Fumes affect everything
+    .build();
+
+LaboratoryAdjacency adjacency = LaboratoryAdjacency.builder()
+    .addAdjacency(LAB_101, LAB_102)  // Same floor
+    .addAdjacency(LAB_102, LAB_103)
+    .addAdjacency(LAB_201, LAB_202)  // Different floor
+    .build();
+
+InfrastructureInfluence infrastructure = InfrastructureInfluence.builder()
+    .addSharedPowerGrid(LAB_101, LAB_102, LAB_103)  // Same circuit
+    .addSharedVentilation(LAB_201, LAB_202)
+    .build();
+
+InfluenceMap map = InfluenceMap.of(physics, infrastructure, adjacency);
+
+InfluenceAnalyzer analyzer = new InfluenceAnalyzer(map);
+```
+
+## Graph Algorithms Used
+
+### Connectivity Analysis
+- **Algorithm**: Connected Components (JGraphT ConnectivityInspector)
+- **Complexity**: O(V + E)
+- **Purpose**: Partition reservations into influence zones
+
+### Biconnectivity Analysis
+- **Algorithm**: Articulation Points / Cut Vertices (JGraphT BiconnectivityInspector)
+- **Complexity**: O(V + E)
+- **Purpose**: Identify critical bridging reservations
+
+## Related Types
+
+- **InfluenceUnit**: Combination of PhysicsProcess + Laboratory
+- **InfluenceZone**: Connected component of mutually influencing reservations
+- **BridgingReservations**: Set of critical reservations that connect zones
+- **PhysicsProcess**: Type of scientific process being conducted
+- **Laboratory**: Physical laboratory location
+- **Reservation**: Booking of a process in a lab at a time
+- **PhysicsInfluence**: Defines process-to-process influences
+- **InfrastructureInfluence**: Defines infrastructure-based influences
+- **LaboratoryAdjacency**: Defines lab-to-lab adjacency relationships
+
+## References
+
+- Source: `/workspace/source/graphs/src/main/java/com/softwarearchetypes/graphs/influence/`
+- InfluenceAnalyzer: `InfluanceAnalyzer.java:12-67`
+- InfluenceMap: `InfluenceMap.java:10-139`

@@ -1,0 +1,639 @@
+---
+title: Parameters
+description: Input parameter handling for calculator calculations
+---
+
+## Overview
+
+The `Parameters` class encapsulates input values required for price calculations. It provides type-safe access to various parameter types including numeric values, money amounts, dates, and times.
+
+## Class Definition
+
+```java
+public class Parameters {
+    private final Map<String, Object> values;
+    
+    public Parameters();
+    public Parameters(Map<String, Object> values);
+}
+```
+
+## Factory Methods
+
+### empty()
+
+```java
+public static Parameters empty()
+```
+
+Creates an empty parameter set.
+
+**Returns:**
+- Empty Parameters instance
+
+**Example:**
+```java
+Parameters params = Parameters.empty();
+// Use with calculators that require no parameters
+Money price = fixedCalculator.calculate(params);
+```
+
+### of() - Single Parameter
+
+```java
+public static Parameters of(String key, Object value)
+```
+
+Creates a parameter set with a single key-value pair.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+<ParamField path="value" type="Object" required>
+  Parameter value
+</ParamField>
+
+**Example:**
+```java
+Parameters params = Parameters.of("quantity", BigDecimal.valueOf(10));
+Money price = calculator.calculate(params);
+```
+
+### of() - Multiple Parameters
+
+Overloaded factory methods for 2-5 parameters:
+
+```java
+Parameters.of(String k1, Object v1, String k2, Object v2)
+Parameters.of(String k1, Object v1, String k2, Object v2, String k3, Object v3)
+Parameters.of(String k1, Object v1, ..., String k4, Object v4)
+Parameters.of(String k1, Object v1, ..., String k5, Object v5)
+```
+
+**Example:**
+```java
+// Two parameters
+Parameters params = Parameters.of(
+    "base", Money.pln(1000),
+    "unit", ChronoUnit.MONTHS
+);
+
+// Three parameters
+Parameters params = Parameters.of(
+    "quantity", BigDecimal.valueOf(15),
+    "date", LocalDate.of(2024, 6, 1),
+    "region", "EU"
+);
+```
+
+## Type-Safe Getters
+
+### getBigDecimal()
+
+```java
+public BigDecimal getBigDecimal(String key)
+```
+
+Retrieves a numeric parameter value.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+**Returns:**
+- `BigDecimal` value
+
+**Supported Conversions:**
+- `BigDecimal` → returned as-is
+- `Number` (Integer, Long, Double, etc.) → converted to BigDecimal
+- `String` → parsed to BigDecimal
+
+**Throws:**
+- `IllegalArgumentException` - If value cannot be converted to BigDecimal
+
+**Example:**
+```java
+Parameters params = Parameters.of("quantity", 15);
+BigDecimal qty = params.getBigDecimal("quantity");
+// Returns: BigDecimal(15)
+
+Parameters params2 = Parameters.of("quantity", "15.5");
+BigDecimal qty2 = params2.getBigDecimal("quantity");
+// Returns: BigDecimal(15.5)
+```
+
+### getMoney()
+
+```java
+public Money getMoney(String key)
+```
+
+Retrieves a money parameter value.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+**Returns:**
+- `Money` value with amount and currency
+
+**Supported Conversions:**
+- `Money` → returned as-is
+- `String` → parsed from format `"CURRENCY AMOUNT"` (e.g., `"PLN 1999.00"`)
+
+**Throws:**
+- `IllegalArgumentException` - If value cannot be converted to Money
+
+**Example:**
+```java
+// Direct Money object
+Parameters params = Parameters.of("baseAmount", Money.pln(1000));
+Money amount = params.getMoney("baseAmount");
+// Returns: Money{value=1000.00, currency=PLN}
+
+// String parsing
+Parameters params2 = Parameters.of("baseAmount", "EUR 500.00");
+Money amount2 = params2.getMoney("baseAmount");
+// Returns: Money{value=500.00, currency=EUR}
+```
+
+### getLocalDate()
+
+```java
+LocalDate getLocalDate(String key)
+```
+
+Retrieves a date parameter value.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+**Returns:**
+- `LocalDate` value
+
+**Supported Conversions:**
+- `LocalDate` → returned as-is
+- `String` → parsed from ISO-8601 format `"YYYY-MM-DD"`
+
+**Throws:**
+- `IllegalArgumentException` - If value cannot be converted to LocalDate
+
+**Example:**
+```java
+// Direct LocalDate object
+Parameters params = Parameters.of("date", LocalDate.of(2024, 6, 1));
+LocalDate date = params.getLocalDate("date");
+// Returns: 2024-06-01
+
+// String parsing
+Parameters params2 = Parameters.of("date", "2024-06-15");
+LocalDate date2 = params2.getLocalDate("date");
+// Returns: 2024-06-15
+```
+
+### getTime()
+
+```java
+LocalDateTime getTime(String key)
+```
+
+Retrieves a timestamp parameter value.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+**Returns:**
+- `LocalDateTime` value
+
+**Supported Conversions:**
+- `LocalDateTime` → returned as-is
+- `String` → parsed from ISO-8601 format `"YYYY-MM-DDTHH:MM:SS"`
+
+**Throws:**
+- `IllegalArgumentException` - If value cannot be converted to LocalDateTime
+
+**Example:**
+```java
+// Direct LocalDateTime object
+Parameters params = Parameters.of(
+    "time",
+    LocalDateTime.of(2024, 6, 1, 14, 30)
+);
+LocalDateTime time = params.getTime("time");
+// Returns: 2024-06-01T14:30:00
+
+// String parsing
+Parameters params2 = Parameters.of("time", "2024-06-01T10:15:30");
+LocalDateTime time2 = params2.getTime("time");
+// Returns: 2024-06-01T10:15:30
+```
+
+### get()
+
+```java
+public Object get(String key)
+```
+
+Retrieves a raw parameter value without type conversion.
+
+<ParamField path="key" type="String" required>
+  Parameter name
+</ParamField>
+
+**Returns:**
+- `Object` - Raw parameter value
+
+**Example:**
+```java
+Parameters params = Parameters.of("region", "EU");
+String region = (String) params.get("region");
+// Returns: "EU"
+```
+
+## Timestamp Methods
+
+Special methods for versioned component calculations.
+
+### timestamp()
+
+```java
+public Optional<LocalDateTime> timestamp()
+```
+
+Retrieves the timestamp parameter used for version lookups.
+
+**Returns:**
+- `Optional<LocalDateTime>` - Timestamp if present, empty otherwise
+
+**Example:**
+```java
+Parameters params = Parameters.of(
+    "timestamp",
+    LocalDateTime.of(2024, 6, 1, 12, 0)
+);
+
+Optional<LocalDateTime> ts = params.timestamp();
+if (ts.isPresent()) {
+    // Use timestamp for version selection
+    ComponentVersion version = component.versionAt(ts.get());
+}
+```
+
+### requireTimestamp()
+
+```java
+public LocalDateTime requireTimestamp()
+```
+
+Retrieves the timestamp parameter, throwing exception if not present.
+
+**Returns:**
+- `LocalDateTime` - Timestamp value
+
+**Throws:**
+- `IllegalArgumentException` - If timestamp parameter is not present
+
+**Example:**
+```java
+Parameters params = Parameters.of(
+    "timestamp",
+    LocalDateTime.of(2024, 6, 1, 12, 0)
+);
+
+LocalDateTime ts = params.requireTimestamp();
+// Returns: 2024-06-01T12:00:00
+
+// Without timestamp - throws exception
+Parameters params2 = Parameters.empty();
+LocalDateTime ts2 = params2.requireTimestamp();
+// Throws: IllegalArgumentException - "Parameters must contain 'timestamp'..."
+```
+
+## Validation Methods
+
+### contains()
+
+```java
+public boolean contains(String key)
+```
+
+Checks if a parameter exists.
+
+<ParamField path="key" type="String" required>
+  Parameter name to check
+</ParamField>
+
+**Returns:**
+- `true` if parameter exists, `false` otherwise
+
+**Example:**
+```java
+Parameters params = Parameters.of("quantity", BigDecimal.valueOf(10));
+
+boolean hasQuantity = params.contains("quantity");
+// Returns: true
+
+boolean hasDate = params.contains("date");
+// Returns: false
+```
+
+### containsAll()
+
+```java
+public boolean containsAll(Set<String> keys)
+```
+
+Checks if all specified parameters exist.
+
+<ParamField path="keys" type="Set<String>" required>
+  Set of parameter names to check
+</ParamField>
+
+**Returns:**
+- `true` if all parameters exist, `false` otherwise
+
+**Example:**
+```java
+Parameters params = Parameters.of(
+    "base", Money.pln(1000),
+    "unit", ChronoUnit.MONTHS
+);
+
+// Check required parameters
+Set<String> required = Set.of("base", "unit");
+boolean hasAll = params.containsAll(required);
+// Returns: true
+
+Set<String> missing = Set.of("base", "unit", "date");
+boolean hasAll2 = params.containsAll(missing);
+// Returns: false ("date" is missing)
+```
+
+## Utility Methods
+
+### keys()
+
+```java
+public Set<String> keys()
+```
+
+Returns all parameter names.
+
+**Returns:**
+- `Set<String>` - Set of parameter names
+
+**Example:**
+```java
+Parameters params = Parameters.of(
+    "quantity", BigDecimal.valueOf(10),
+    "date", LocalDate.of(2024, 6, 1)
+);
+
+Set<String> keys = params.keys();
+// Returns: ["quantity", "date"]
+```
+
+### getValues()
+
+```java
+public Map<String, Object> getValues()
+```
+
+Returns the internal parameter map.
+
+**Returns:**
+- `Map<String, Object>` - All parameters
+
+**Example:**
+```java
+Parameters params = Parameters.of("quantity", BigDecimal.valueOf(10));
+Map<String, Object> values = params.getValues();
+// Returns: {"quantity": BigDecimal(10)}
+```
+
+### with()
+
+```java
+public Parameters with(String key, Object value)
+```
+
+Creates a new Parameters instance with an additional parameter.
+
+<ParamField path="key" type="String" required>
+  Parameter name to add
+</ParamField>
+
+<ParamField path="value" type="Object" required>
+  Parameter value to add
+</ParamField>
+
+**Returns:**
+- `Parameters` - New instance with added parameter
+
+<Info>
+  This method does not modify the original Parameters instance (immutable style).
+</Info>
+
+**Example:**
+```java
+Parameters original = Parameters.of("quantity", BigDecimal.valueOf(10));
+
+Parameters extended = original.with("date", LocalDate.of(2024, 6, 1));
+
+// Original unchanged
+original.contains("date"); // Returns: false
+
+// New instance has both parameters
+extended.contains("quantity"); // Returns: true
+extended.contains("date");     // Returns: true
+```
+
+## Common Usage Patterns
+
+### Validating Required Parameters
+
+```java
+public Money calculate(Parameters params) {
+    // Get required fields from calculator type
+    Set<String> required = getType().requiredCalculationFields();
+    
+    // Validate all required parameters are present
+    if (!params.containsAll(required)) {
+        throw new IllegalArgumentException(
+            "Missing required parameters: " + required
+        );
+    }
+    
+    // Safe to proceed with calculation
+    BigDecimal quantity = params.getBigDecimal("quantity");
+    return calculatePrice(quantity);
+}
+```
+
+### Building Parameters Incrementally
+
+```java
+// Start with base parameters
+Parameters params = Parameters.of(
+    "quantity", BigDecimal.valueOf(10)
+);
+
+// Add timestamp for versioned calculation
+params = params.with(
+    "timestamp",
+    LocalDateTime.now()
+);
+
+// Add context-specific parameters
+if (isPremiumCustomer) {
+    params = params.with("customerTier", "PREMIUM");
+}
+
+Money price = calculator.calculate(params);
+```
+
+### Parameter Conversion
+
+```java
+// Accept flexible input formats
+Parameters params = Parameters.of(
+    "quantity", "15",           // String
+    "baseAmount", "PLN 1000",   // String with currency
+    "date", "2024-06-01"        // ISO date string
+);
+
+// Type-safe extraction with automatic conversion
+BigDecimal qty = params.getBigDecimal("quantity");
+// Returns: BigDecimal(15)
+
+Money amount = params.getMoney("baseAmount");
+// Returns: Money{value=1000, currency=PLN}
+
+LocalDate date = params.getLocalDate("date");
+// Returns: 2024-06-01
+```
+
+### Scenario Simulation
+
+```java
+// Create multiple scenarios for testing
+List<Parameters> scenarios = List.of(
+    Parameters.of("quantity", BigDecimal.valueOf(5)),
+    Parameters.of("quantity", BigDecimal.valueOf(15)),
+    Parameters.of("quantity", BigDecimal.valueOf(25)),
+    Parameters.of("quantity", BigDecimal.valueOf(50))
+);
+
+// Simulate calculator across all scenarios
+Map<Parameters, Money> results = calculator.simulate(scenarios);
+
+results.forEach((params, price) -> {
+    System.out.printf("Quantity %s → %s%n",
+        params.getBigDecimal("quantity"),
+        price
+    );
+});
+// Output:
+// Quantity 5 → PLN 100.00
+// Quantity 15 → PLN 105.00
+// Quantity 25 → PLN 110.00
+// Quantity 50 → PLN 120.00
+```
+
+## ParameterValue Interface
+
+Advanced: Expressions for computing parameter values from component results.
+
+```java
+public sealed interface ParameterValue 
+    permits ValueOf, SumOf, DifferenceOf, ProductOf {
+    
+    Money evaluate(Map<Component, Money> componentResults);
+}
+```
+
+### ValueOf
+
+References a single component's value.
+
+```java
+record ValueOf(String componentName) implements ParameterValue
+```
+
+**Example:**
+```java
+ParameterValue basePrice = new ValueOf("basePrice");
+Money value = basePrice.evaluate(componentResults);
+```
+
+### SumOf
+
+Sums multiple component values.
+
+```java
+record SumOf(String... componentNames) implements ParameterValue
+```
+
+**Example:**
+```java
+// Total = basePrice + shipping + handling
+ParameterValue total = new SumOf("basePrice", "shipping", "handling");
+Money value = total.evaluate(componentResults);
+```
+
+### DifferenceOf
+
+Calculates difference between two components.
+
+```java
+record DifferenceOf(String minuendComponent, String subtrahendComponent) 
+    implements ParameterValue
+```
+
+**Example:**
+```java
+// Profit = revenue - costs
+ParameterValue profit = new DifferenceOf("revenue", "costs");
+Money value = profit.evaluate(componentResults);
+```
+
+### ProductOf
+
+Multiplies component value by a factor.
+
+```java
+record ProductOf(String componentName, BigDecimal factor) 
+    implements ParameterValue
+```
+
+**Example:**
+```java
+// Premium = basePrice × 1.5
+ParameterValue premium = new ProductOf("basePrice", BigDecimal.valueOf(1.5));
+Money value = premium.evaluate(componentResults);
+```
+
+### Usage in Component Dependencies
+
+```java
+// Component that depends on other components
+Component taxCalculation = Component.create(
+    "VAT",
+    taxCalculator,
+    Map.of(
+        "baseAmount", new SumOf("productPrice", "shipping")
+    )
+);
+
+// When calculated, VAT baseAmount will be:
+// productPrice result + shipping result
+```
+
+## Related Documentation
+
+- [Calculator Interface](/api/pricing/calculator) - Using parameters in calculations
+- [Calculator Types](/api/pricing/calculator-types) - Required parameter fields
+- [Interpretation](/api/pricing/interpretation) - Parameter semantics in different contexts

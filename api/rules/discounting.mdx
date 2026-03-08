@@ -1,0 +1,667 @@
+---
+title: Discounting
+description: Flexible rule-based pricing modification system with predicates, appliers, and guardians
+---
+
+## Overview
+
+The discounting module provides a sophisticated rule engine for applying price modifications to offer items. It uses a predicate-applier-guardian pattern to conditionally modify prices while ensuring business constraints are maintained.
+
+## Core Concepts
+
+### OfferItemModifier
+
+Base interface for all price modification strategies.
+
+```java
+package com.softwarearchetypes.rules.discounting;
+
+public interface OfferItemModifier {
+    OfferItem modify(OfferItem item);
+}
+```
+
+#### modify()
+
+Applies a price modification to an offer item.
+
+```java
+OfferItem modify(OfferItem item)
+```
+
+<ParamField path="item" type="OfferItem" required>
+  The offer item to potentially modify
+</ParamField>
+
+<ResponseField name="return" type="OfferItem">
+  Modified offer item with new price, or unchanged item if modification doesn't apply
+</ResponseField>
+
+## Key Components
+
+### OfferItem
+
+Represents a priced item in an offer that can receive discounts.
+
+```java
+package com.softwarearchetypes.rules.discounting.offer;
+
+public class OfferItem {
+    private final UUID productId;
+    private final Quantity quantity;
+    private final Money basePrice;
+    private Money finalPrice;
+    private List<Modification> modifications;
+    
+    public OfferItem(UUID productId, Quantity quantity, Money basePrice);
+    
+    public OfferItem apply(Modification modification);
+    
+    public Money getBasePrice();
+    public Money getFinalPrice();
+    public Quantity getQuantity();
+    public UUID getProductId();
+}
+```
+
+<ParamField path="productId" type="UUID" required>
+  Unique identifier of the product
+</ParamField>
+
+<ParamField path="quantity" type="Quantity" required>
+  Quantity of the product
+</ParamField>
+
+<ParamField path="basePrice" type="Money" required>
+  Original price before any modifications
+</ParamField>
+
+<ParamField path="finalPrice" type="Money">
+  Current price after modifications (initially equals basePrice)
+</ParamField>
+
+<ParamField path="modifications" type="List<Modification>">
+  History of all applied price modifications
+</ParamField>
+
+#### apply()
+
+Applies a modification and returns a new OfferItem with updated price.
+
+```java
+public OfferItem apply(Modification modification)
+```
+
+<ParamField path="modification" type="Modification" required>
+  The price modification to apply
+</ParamField>
+
+<ResponseField name="return" type="OfferItem">
+  New OfferItem instance with modification applied and tracked
+</ResponseField>
+
+**Example:**
+```java
+OfferItem item = new OfferItem(productId, Quantity.of(2), Money.of(100, "USD"));
+
+Modification discount = new Modification(
+    Money.of(80, "USD"),  // New price
+    "20% off promotion"
+);
+
+OfferItem discounted = item.apply(discount);
+// discounted.getFinalPrice() = $80
+// discounted.getBasePrice() = $100 (unchanged)
+```
+
+### ConfigurableItemModifier
+
+The most flexible modifier using predicate-applier-guardian pattern.
+
+```java
+package com.softwarearchetypes.rules.discounting.offer.modifiers;
+
+public class ConfigurableItemModifier extends NamedOfferItemModifier {
+    private final Predicate<OfferItem> predicate;
+    private final Function<OfferItem, Money> applier;
+    private final Predicate<OfferItem> guardian;
+    
+    public ConfigurableItemModifier(
+        String name,
+        Predicate<OfferItem> predicate,
+        Function<OfferItem, Money> applier,
+        Predicate<OfferItem> guardian
+    );
+    
+    @Override
+    public OfferItem modify(OfferItem item);
+    
+    public Predicate<OfferItem> getPredicate();
+    public Function<OfferItem, Money> getApplier();
+    public Predicate<OfferItem> getGuardian();
+}
+```
+
+#### Constructor Parameters
+
+<ParamField path="name" type="String" required>
+  Name of the modification (for tracking and debugging)
+</ParamField>
+
+<ParamField path="predicate" type="Predicate<OfferItem>" required>
+  Condition that determines if this modifier applies to the item
+</ParamField>
+
+<ParamField path="applier" type="Function<OfferItem, Money>" required>
+  Function that calculates the new price
+</ParamField>
+
+<ParamField path="guardian" type="Predicate<OfferItem>" required>
+  Safety check that validates the new price is acceptable (e.g., maintains minimum margin)
+</ParamField>
+
+#### modify() Algorithm
+
+```java
+@Override
+public OfferItem modify(OfferItem item) {
+    if (predicate.test(item)) {                    // 1. Check if rule applies
+        Money applied = applier.apply(item);        // 2. Calculate new price
+        if (!applied.equals(item.getFinalPrice())) { // 3. Check if price changed
+            OfferItem newItem = item.apply(
+                new Modification(applied, getName())
+            );
+            if (guardian.test(newItem))             // 4. Validate with guardian
+                return newItem;                     // 5. Return modified item
+        }
+    }
+    return item;  // Return unchanged if any check fails
+}
+```
+
+**Flow:**
+1. **Predicate**: Does this rule apply to this item?
+2. **Applier**: Calculate new price
+3. **Change Check**: Is the new price different?
+4. **Guardian**: Is the new price acceptable?
+5. **Result**: Return modified or original item
+
+### Built-in Applier Functions
+
+The module provides several standard price calculation functions:
+
+#### PercentageFromBase
+
+Applies percentage discount from base price.
+
+```java
+package com.softwarearchetypes.rules.discounting.offer.modifiers.functors.applier;
+
+public class PercentageFromBase implements Function<OfferItem, Money> {
+    private final double percentage;  // e.g., 0.20 for 20% off
+    
+    @Override
+    public Money apply(OfferItem item) {
+        return item.getBasePrice().multiply(1.0 - percentage);
+    }
+}
+```
+
+**Example:**
+```java
+Function<OfferItem, Money> twentyPercentOff = new PercentageFromBase(0.20);
+// $100 base price → $80 final price
+```
+
+#### PercentageAccumulated
+
+Applies percentage discount from current (already discounted) price.
+
+```java
+public class PercentageAccumulated implements Function<OfferItem, Money> {
+    private final double percentage;
+    
+    @Override
+    public Money apply(OfferItem item) {
+        return item.getFinalPrice().multiply(1.0 - percentage);
+    }
+}
+```
+
+**Example:**
+```java
+Function<OfferItem, Money> additionalTenPercent = new PercentageAccumulated(0.10);
+// $80 current price → $72 final price (stacks with previous discount)
+```
+
+#### FixedPrice
+
+Sets an absolute price.
+
+```java
+public class FixedPrice implements Function<OfferItem, Money> {
+    private final Money price;
+    
+    @Override
+    public Money apply(OfferItem item) {
+        return price;
+    }
+}
+```
+
+**Example:**
+```java
+Function<OfferItem, Money> clearancePricing = new FixedPrice(Money.of(9.99, "USD"));
+// Any base price → $9.99
+```
+
+#### Amount
+
+Subtracts a fixed amount from base price.
+
+```java
+public class Amount implements Function<OfferItem, Money> {
+    private final Money amount;
+    
+    @Override
+    public Money apply(OfferItem item) {
+        return item.getBasePrice().subtract(amount);
+    }
+}
+```
+
+**Example:**
+```java
+Function<OfferItem, Money> tenDollarsOff = new Amount(Money.of(10, "USD"));
+// $100 base price → $90 final price
+```
+
+### Built-in Predicate Functions
+
+Predicates determine if a rule applies to an item:
+
+#### ItemIdPredicate
+
+Matches specific product IDs.
+
+```java
+package com.softwarearchetypes.rules.discounting.offer.modifiers.functors.predicates;
+
+public class ItemIdPredicate implements Predicate<OfferItem> {
+    private final Set<UUID> productIds;
+    
+    @Override
+    public boolean test(OfferItem item) {
+        return productIds.contains(item.getProductId());
+    }
+}
+```
+
+#### QuantityPredicate
+
+Matches items with quantity above a threshold.
+
+```java
+public class QuantityPredicate implements Predicate<OfferItem> {
+    private final int minimumQuantity;
+    
+    @Override
+    public boolean test(OfferItem item) {
+        return item.getQuantity().intValue() >= minimumQuantity;
+    }
+}
+```
+
+#### MoreExpensiveThanPredicate
+
+Matches items above a price threshold.
+
+```java
+public class MoreExpensiveThanPredicate implements Predicate<OfferItem> {
+    private final Money threshold;
+    
+    @Override
+    public boolean test(OfferItem item) {
+        return item.getFinalPrice().isGreaterThan(threshold);
+    }
+}
+```
+
+### Built-in Guardian Functions
+
+Guardians validate that price modifications maintain business constraints:
+
+#### MarginGuardian
+
+Ensures minimum profit margin is maintained.
+
+```java
+package com.softwarearchetypes.rules.discounting.offer.modifiers.functors.guardians;
+
+public class MarginGuardian implements Predicate<OfferItem> {
+    private final double minimumMarginPercentage;
+    
+    @Override
+    public boolean test(OfferItem item) {
+        Money cost = getCost(item.getProductId());
+        Money margin = item.getFinalPrice().subtract(cost);
+        double marginPercent = margin.divide(cost).doubleValue();
+        return marginPercent >= minimumMarginPercentage;
+    }
+}
+```
+
+#### EmptyGuardian
+
+Always allows the modification (no restrictions).
+
+```java
+public class EmptyGuardian implements Predicate<OfferItem> {
+    @Override
+    public boolean test(OfferItem item) {
+        return true;
+    }
+}
+```
+
+### Chain Modifiers
+
+Multiple modifiers can be chained to apply sequentially.
+
+```java
+public class ChainOfferItemModifier implements OfferItemModifier {
+    private final List<OfferItemModifier> modifiers;
+    
+    @Override
+    public OfferItem modify(OfferItem item) {
+        OfferItem current = item;
+        for (OfferItemModifier modifier : modifiers) {
+            current = modifier.modify(current);
+        }
+        return current;
+    }
+}
+```
+
+## Usage Examples
+
+### Simple Percentage Discount
+
+```java
+// 20% off for all items
+OfferItemModifier twentyPercentOff = new ConfigurableItemModifier(
+    "20% Off Sale",
+    item -> true,                              // Applies to all items
+    new PercentageFromBase(0.20),              // 20% off base price
+    new EmptyGuardian()                        // No restrictions
+);
+
+OfferItem item = new OfferItem(productId, Quantity.of(1), Money.of(100, "USD"));
+OfferItem discounted = twentyPercentOff.modify(item);
+// discounted.getFinalPrice() = $80
+```
+
+### Quantity-Based Discount with Margin Protection
+
+```java
+// Buy 5+, get 15% off (but maintain 20% margin)
+OfferItemModifier bulkDiscount = new ConfigurableItemModifier(
+    "Bulk Discount",
+    new QuantityPredicate(5),                  // Only if quantity >= 5
+    new PercentageFromBase(0.15),              // 15% off
+    new MarginGuardian(0.20)                   // Maintain 20% margin
+);
+
+OfferItem bulk = new OfferItem(productId, Quantity.of(10), Money.of(100, "USD"));
+OfferItem discounted = bulkDiscount.modify(bulk);
+// If cost is $75, new price $85 maintains 13% margin - rejected by guardian
+// Returns original item unchanged
+```
+
+### Product-Specific Discount
+
+```java
+Set<UUID> promotionalProducts = Set.of(
+    UUID.fromString("product-1"),
+    UUID.fromString("product-2")
+);
+
+OfferItemModifier promoDiscount = new ConfigurableItemModifier(
+    "Featured Products Sale",
+    new ItemIdPredicate(promotionalProducts),  // Only specific products
+    new Amount(Money.of(10, "USD")),           // $10 off
+    item -> item.getFinalPrice().isPositive()  // Price must stay positive
+);
+```
+
+### Tiered Pricing
+
+```java
+// Different discounts based on price tiers
+OfferItemModifier luxuryDiscount = new ConfigurableItemModifier(
+    "Luxury Items 10% Off",
+    new MoreExpensiveThanPredicate(Money.of(500, "USD")),
+    new PercentageFromBase(0.10),
+    new EmptyGuardian()
+);
+
+OfferItemModifier midRangeDiscount = new ConfigurableItemModifier(
+    "Mid-Range 5% Off",
+    item -> item.getBasePrice().isGreaterThan(Money.of(100, "USD")) &&
+            item.getBasePrice().isLessThan(Money.of(500, "USD")),
+    new PercentageFromBase(0.05),
+    new EmptyGuardian()
+);
+```
+
+### Stacking Discounts with Chain
+
+```java
+// Apply multiple discounts in sequence
+OfferItemModifier stackedDiscounts = new ChainOfferItemModifier(List.of(
+    new ConfigurableItemModifier(
+        "Member Discount",
+        item -> customerIsMember(),
+        new PercentageFromBase(0.10),         // 10% member discount
+        new EmptyGuardian()
+    ),
+    new ConfigurableItemModifier(
+        "Clearance",
+        new ItemIdPredicate(clearanceItems),
+        new PercentageAccumulated(0.25),      // Additional 25% off current price
+        new MarginGuardian(0.05)              // Maintain at least 5% margin
+    )
+));
+
+// $100 item for member with clearance:
+// After member discount: $90
+// After clearance: $67.50 (25% off $90)
+```
+
+### Dynamic Configuration from Database
+
+```java
+public class DiscountFactory {
+    private final DiscountRepository repository;
+    
+    public OfferItemModifier createFromConfig(String discountCode) {
+        DiscountConfig config = repository.findByCode(discountCode);
+        
+        Predicate<OfferItem> predicate = buildPredicate(config);
+        Function<OfferItem, Money> applier = buildApplier(config);
+        Predicate<OfferItem> guardian = buildGuardian(config);
+        
+        return new ConfigurableItemModifier(
+            config.getName(),
+            predicate,
+            applier,
+            guardian
+        );
+    }
+    
+    private Predicate<OfferItem> buildPredicate(DiscountConfig config) {
+        return switch(config.getPredicateType()) {
+            case "PRODUCT_IDS" -> new ItemIdPredicate(config.getProductIds());
+            case "MIN_QUANTITY" -> new QuantityPredicate(config.getMinQuantity());
+            case "MIN_PRICE" -> new MoreExpensiveThanPredicate(config.getMinPrice());
+            default -> item -> true;
+        };
+    }
+    
+    private Function<OfferItem, Money> buildApplier(DiscountConfig config) {
+        return switch(config.getApplierType()) {
+            case "PERCENTAGE" -> new PercentageFromBase(config.getPercentage());
+            case "FIXED_AMOUNT" -> new Amount(config.getAmount());
+            case "FIXED_PRICE" -> new FixedPrice(config.getFixedPrice());
+            default -> OfferItem::getFinalPrice;
+        };
+    }
+}
+```
+
+### Customer Segment Discounts
+
+```java
+public class CustomerDiscountService {
+    
+    public OfferItemModifier getDiscountForCustomer(Customer customer) {
+        List<OfferItemModifier> modifiers = new ArrayList<>();
+        
+        // VIP customers
+        if (customer.isVIP()) {
+            modifiers.add(new ConfigurableItemModifier(
+                "VIP Discount",
+                item -> true,
+                new PercentageFromBase(0.15),
+                new EmptyGuardian()
+            ));
+        }
+        
+        // First-time customers
+        if (customer.isFirstPurchase()) {
+            modifiers.add(new ConfigurableItemModifier(
+                "Welcome Discount",
+                new MoreExpensiveThanPredicate(Money.of(50, "USD")),
+                new Amount(Money.of(10, "USD")),
+                new EmptyGuardian()
+            ));
+        }
+        
+        // Birthday month
+        if (customer.isBirthdayMonth()) {
+            modifiers.add(new ConfigurableItemModifier(
+                "Birthday Special",
+                item -> true,
+                new PercentageAccumulated(0.10),
+                new EmptyGuardian()
+            ));
+        }
+        
+        return new ChainOfferItemModifier(modifiers);
+    }
+}
+```
+
+## Testing Modifiers
+
+```java
+public class DiscountRuleTest {
+    
+    @Test
+    void shouldApplyDiscountWhenPredicateMatches() {
+        OfferItem item = new OfferItem(
+            productId,
+            Quantity.of(10),
+            Money.of(100, "USD")
+        );
+        
+        OfferItemModifier modifier = new ConfigurableItemModifier(
+            "Test Discount",
+            new QuantityPredicate(5),
+            new PercentageFromBase(0.20),
+            new EmptyGuardian()
+        );
+        
+        OfferItem result = modifier.modify(item);
+        
+        assertThat(result.getFinalPrice()).isEqualTo(Money.of(80, "USD"));
+    }
+    
+    @Test
+    void shouldNotApplyDiscountWhenGuardianRejects() {
+        OfferItem item = new OfferItem(
+            productId,
+            Quantity.of(1),
+            Money.of(100, "USD")  // Cost is $95
+        );
+        
+        OfferItemModifier modifier = new ConfigurableItemModifier(
+            "Excessive Discount",
+            item -> true,
+            new PercentageFromBase(0.50),  // Would be $50
+            new MarginGuardian(0.20)       // Requires 20% margin
+        );
+        
+        OfferItem result = modifier.modify(item);
+        
+        // Guardian rejects - insufficient margin
+        assertThat(result.getFinalPrice()).isEqualTo(Money.of(100, "USD"));
+    }
+}
+```
+
+## Configuration Patterns
+
+### Reflection-Based Configuration
+
+The module includes a reflection-based configuration system:
+
+```java
+@Config
+public class DiscountConfiguration {
+    
+    @Discount(name = "summer-sale")
+    public OfferItemModifier summerSale(
+            @DiscountParam("percentage") double percentage) {
+        return new ConfigurableItemModifier(
+            "Summer Sale",
+            item -> true,
+            new PercentageFromBase(percentage),
+            new EmptyGuardian()
+        );
+    }
+}
+```
+
+### Dynamic Rule Loading
+
+Load discount rules at runtime:
+
+```java
+public class DynamicDiscountEngine {
+    private final ConfigProvider configProvider;
+    
+    public OfferItem applyDiscounts(OfferItem item, String promoCode) {
+        List<OfferItemModifier> modifiers = 
+            configProvider.getModifiersForPromo(promoCode);
+        
+        OfferItemModifier chain = new ChainOfferItemModifier(modifiers);
+        return chain.modify(item);
+    }
+}
+```
+
+## Related Types
+
+- **OfferItem**: Item with price and quantity
+- **Modification**: Record of a price change with reason
+- **Money**: Value object for monetary amounts
+- **Quantity**: Value object for quantities
+- **Predicate**: Condition for applying discount
+- **Function**: Price calculation function
+
+## References
+
+- Source: `/workspace/source/rules/src/main/java/com/softwarearchetypes/rules/discounting/`
+- ConfigurableItemModifier: `offer/modifiers/ConfigurableItemModifier.java:10-47`
+- OfferItem: `offer/OfferItem.java:12-63`

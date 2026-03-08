@@ -1,0 +1,597 @@
+---
+title: User Journey
+description: Graph-based user journey modeling and path optimization
+---
+
+## Overview
+
+The user journey module models customer journeys as directed graphs of states and transitions. It provides algorithms to find all possible paths to achieve a goal, optimize paths based on weights, and track customer progression through states.
+
+## Key Components
+
+### UserJourney
+
+Represents a customer's journey through product states.
+
+```java
+package com.softwarearchetypes.graphs.userjourney;
+
+record UserJourney(
+    UserJourneyId userJourneyId,
+    Graph<State, Condition> graph,
+    State currentState
+) {
+    static Builder builder(UserJourneyId userJourneyId);
+    
+    Set<CustomerPath> waysToAchieve(ProductType productType);
+    
+    Optional<CustomerPath> optimizedWayToAchieve(
+        ProductType productType,
+        Function<Condition, Double> weightFunction
+    );
+    
+    UserJourney onFulfilled(Condition condition);
+}
+```
+
+<ParamField path="userJourneyId" type="UserJourneyId" required>
+  Unique identifier for this user journey
+</ParamField>
+
+<ParamField path="graph" type="Graph<State, Condition>" required>
+  Directed graph where vertices are states and edges are conditions for transitions
+</ParamField>
+
+<ParamField path="currentState" type="State" required>
+  Current state of the customer in their journey
+</ParamField>
+
+### Builder
+
+Fluent builder for constructing user journeys.
+
+```java
+static Builder builder(UserJourneyId userJourneyId)
+```
+
+**Example:**
+```java
+UserJourney journey = UserJourney.builder(journeyId)
+    .from(State.VISITOR)
+        .on(Condition.SIGNUP)
+        .goto_(State.REGISTERED)
+    .from(State.REGISTERED)
+        .on(Condition.FIRST_PURCHASE)
+        .goto_(State.CUSTOMER)
+    .from(State.CUSTOMER)
+        .on(Condition.PREMIUM_UPGRADE)
+        .goto_(State.PREMIUM_CUSTOMER)
+    .withCurrentState(State.VISITOR)
+    .build();
+```
+
+#### from()
+
+Starts defining a transition from a state.
+
+```java
+TransitionBuilder from(State state)
+```
+
+<ParamField path="state" type="State" required>
+  Source state for the transition
+</ParamField>
+
+<ResponseField name="return" type="TransitionBuilder">
+  Builder for specifying the condition and target state
+</ResponseField>
+
+#### TransitionBuilder.on()
+
+Specifies the condition that triggers the transition.
+
+```java
+TransitionWithCondition on(Condition condition)
+```
+
+<ParamField path="condition" type="Condition" required>
+  Condition that must be fulfilled to transition
+</ParamField>
+
+<ResponseField name="return" type="TransitionWithCondition">
+  Builder for specifying the target state
+</ResponseField>
+
+#### TransitionWithCondition.goto_()
+
+Specifies the target state of the transition.
+
+```java
+Builder goto_(State toState)
+```
+
+<ParamField path="toState" type="State" required>
+  Target state after condition is fulfilled
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  Journey builder for adding more transitions
+</ResponseField>
+
+#### withCurrentState()
+
+Sets the starting state for the journey.
+
+```java
+Builder withCurrentState(State currentState)
+```
+
+<ParamField path="currentState" type="State" required>
+  Initial state of the customer
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  Journey builder
+</ResponseField>
+
+### waysToAchieve()
+
+Finds all possible paths to reach a product type from current state.
+
+```java
+Set<CustomerPath> waysToAchieve(ProductType productType)
+```
+
+<ParamField path="productType" type="ProductType" required>
+  Type of product the customer wants to achieve/acquire
+</ParamField>
+
+<ResponseField name="return" type="Set<CustomerPath>">
+  All possible paths from current state to any state containing the product type
+</ResponseField>
+
+**Algorithm:**
+1. Find all states that contain the target product type
+2. For each target state, find all paths from current state using JGraphT AllDirectedPaths
+3. Convert graph paths to CustomerPath objects
+4. Return set of all discovered paths
+
+**Example:**
+```java
+UserJourney journey = buildJourney();
+
+// Customer is in VISITOR state, wants PREMIUM_FEATURES
+Set<CustomerPath> paths = journey.waysToAchieve(ProductType.PREMIUM_FEATURES);
+
+for (CustomerPath path : paths) {
+    System.out.println("Path length: " + path.length());
+    System.out.println("Conditions: " + path.conditions());
+}
+
+// Might return:
+// Path 1: [SIGNUP, FIRST_PURCHASE, PREMIUM_UPGRADE]
+// Path 2: [DIRECT_PREMIUM_SIGNUP]
+```
+
+### optimizedWayToAchieve()
+
+Finds the optimal path to reach a product type based on a weight function.
+
+```java
+Optional<CustomerPath> optimizedWayToAchieve(
+    ProductType productType,
+    Function<Condition, Double> weightFunction
+)
+```
+
+<ParamField path="productType" type="ProductType" required>
+  Type of product to achieve
+</ParamField>
+
+<ParamField path="weightFunction" type="Function<Condition, Double>" required>
+  Function that assigns a weight/cost to each condition. Lower weights are preferred.
+</ParamField>
+
+<ResponseField name="return" type="Optional<CustomerPath>">
+  The path with minimum total weight, or empty if no path exists
+</ResponseField>
+
+**Algorithm:**
+1. Find all possible paths using waysToAchieve()
+2. Calculate weight for each path using weightFunction
+3. Return path with minimum weight
+
+**Example:**
+```java
+// Weight by estimated time to complete each condition
+Function<Condition, Double> timeWeight = condition -> switch(condition) {
+    case SIGNUP -> 5.0;              // 5 minutes
+    case FIRST_PURCHASE -> 30.0;     // 30 minutes
+    case PREMIUM_UPGRADE -> 10.0;    // 10 minutes
+    case DIRECT_PREMIUM_SIGNUP -> 15.0;  // 15 minutes
+};
+
+Optional<CustomerPath> fastest = journey.optimizedWayToAchieve(
+    ProductType.PREMIUM_FEATURES,
+    timeWeight
+);
+
+fastest.ifPresent(path -> 
+    System.out.println("Fastest path takes " + path.weight(timeWeight) + " minutes")
+);
+
+// Weight by conversion probability (higher is better, so negate)
+Function<Condition, Double> conversionWeight = condition -> -condition.conversionRate();
+
+Optional<CustomerPath> mostLikely = journey.optimizedWayToAchieve(
+    ProductType.PREMIUM_FEATURES,
+    conversionWeight
+);
+```
+
+### onFulfilled()
+
+Transitions the journey to a new state when a condition is fulfilled.
+
+```java
+UserJourney onFulfilled(Condition condition)
+```
+
+<ParamField path="condition" type="Condition" required>
+  The condition that was fulfilled
+</ParamField>
+
+<ResponseField name="return" type="UserJourney">
+  New UserJourney instance with updated current state, or unchanged journey if condition doesn't apply
+</ResponseField>
+
+**Behavior:**
+- Looks for outgoing edges from current state
+- Finds edge matching the fulfilled condition
+- Returns new journey with state transitioned to target
+- Returns unchanged journey if condition not found
+
+**Example:**
+```java
+UserJourney journey = buildJourney();  // currentState = VISITOR
+
+// Customer signs up
+UserJourney afterSignup = journey.onFulfilled(Condition.SIGNUP);
+// afterSignup.currentState() = REGISTERED
+
+// Customer makes first purchase
+UserJourney afterPurchase = afterSignup.onFulfilled(Condition.FIRST_PURCHASE);
+// afterPurchase.currentState() = CUSTOMER
+
+// Try invalid transition
+UserJourney unchanged = journey.onFulfilled(Condition.PREMIUM_UPGRADE);
+// unchanged.currentState() still = VISITOR (no such transition from VISITOR)
+```
+
+### CustomerPath
+
+Represents a path through the user journey.
+
+```java
+package com.softwarearchetypes.graphs.userjourney;
+
+record CustomerPath(List<Condition> conditions) {
+    static CustomerPath of(List<Condition> conditions);
+    
+    int length();
+    boolean isEmpty();
+    double weight(Function<Condition, Double> weightFunction);
+}
+```
+
+<ParamField path="conditions" type="List<Condition>" required>
+  Ordered list of conditions that form the path
+</ParamField>
+
+#### length()
+
+Returns the number of conditions in the path.
+
+```java
+int length()
+```
+
+<ResponseField name="return" type="int">
+  Number of conditions (edges) in the path
+</ResponseField>
+
+#### weight()
+
+Calculates total weight of the path.
+
+```java
+double weight(Function<Condition, Double> weightFunction)
+```
+
+<ParamField path="weightFunction" type="Function<Condition, Double>" required>
+  Function mapping conditions to numeric weights
+</ParamField>
+
+<ResponseField name="return" type="double">
+  Sum of weights for all conditions in the path
+</ResponseField>
+
+**Example:**
+```java
+CustomerPath path = CustomerPath.of(List.of(
+    Condition.SIGNUP,
+    Condition.FIRST_PURCHASE,
+    Condition.PREMIUM_UPGRADE
+));
+
+System.out.println("Path length: " + path.length());  // 3
+
+Function<Condition, Double> cost = condition -> condition.price();
+double totalCost = path.weight(cost);
+
+Function<Condition, Double> difficulty = condition -> condition.difficultyScore();
+double totalDifficulty = path.weight(difficulty);
+```
+
+### State
+
+Represents a state in the customer journey.
+
+```java
+package com.softwarearchetypes.graphs.userjourney;
+
+record State(String name, Set<Product> availableProducts) {
+    boolean contains(ProductType productType);
+}
+```
+
+#### contains()
+
+Checks if a product type is available in this state.
+
+```java
+boolean contains(ProductType productType)
+```
+
+<ParamField path="productType" type="ProductType" required>
+  Type of product to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if any product in this state matches the product type
+</ResponseField>
+
+### Condition
+
+Represents a condition that triggers a state transition.
+
+```java
+package com.softwarearchetypes.graphs.userjourney;
+
+record Condition(String name) {}
+```
+
+Conditions typically represent user actions or events:
+- `SIGNUP` - User creates an account
+- `FIRST_PURCHASE` - User makes their first purchase
+- `PREMIUM_UPGRADE` - User upgrades to premium
+- `REFERRAL` - User refers another customer
+
+## Usage Examples
+
+### E-Commerce Customer Journey
+
+```java
+// Define states with available products
+State visitor = new State("Visitor", Set.of());
+State registered = new State("Registered", Set.of(
+    new Product("FREE_TRIAL", ProductType.TRIAL)
+));
+State customer = new State("Customer", Set.of(
+    new Product("BASIC_PLAN", ProductType.BASIC),
+    new Product("STANDARD_PLAN", ProductType.STANDARD)
+));
+State premium = new State("Premium", Set.of(
+    new Product("PREMIUM_PLAN", ProductType.PREMIUM)
+));
+
+// Define conditions
+Condition signup = new Condition("SIGNUP");
+Condition firstPurchase = new Condition("FIRST_PURCHASE");
+Condition upgrade = new Condition("PREMIUM_UPGRADE");
+Condition directPremium = new Condition("DIRECT_PREMIUM_SIGNUP");
+
+// Build journey graph
+UserJourney journey = UserJourney.builder(UserJourneyId.generate())
+    .from(visitor).on(signup).goto_(registered)
+    .from(visitor).on(directPremium).goto_(premium)  // Skip steps
+    .from(registered).on(firstPurchase).goto_(customer)
+    .from(customer).on(upgrade).goto_(premium)
+    .withCurrentState(visitor)
+    .build();
+
+// Find all ways to get premium
+Set<CustomerPath> paths = journey.waysToAchieve(ProductType.PREMIUM);
+// Returns:
+// 1. [SIGNUP, FIRST_PURCHASE, PREMIUM_UPGRADE]
+// 2. [DIRECT_PREMIUM_SIGNUP]
+
+// Find optimal path by cost
+Function<Condition, Double> costWeight = c -> switch(c.name()) {
+    case "SIGNUP" -> 0.0;
+    case "FIRST_PURCHASE" -> 29.99;
+    case "PREMIUM_UPGRADE" -> 20.0;  // Upgrade cost
+    case "DIRECT_PREMIUM_SIGNUP" -> 49.99;
+    default -> 0.0;
+};
+
+Optional<CustomerPath> cheapest = journey.optimizedWayToAchieve(
+    ProductType.PREMIUM,
+    costWeight
+);
+// Returns: [DIRECT_PREMIUM_SIGNUP] (49.99 vs 29.99 + 20.0 = 49.99)
+```
+
+### Tracking Customer Progress
+
+```java
+public class JourneyTracker {
+    private UserJourney journey;
+    
+    public void handleEvent(CustomerEvent event) {
+        Condition condition = mapEventToCondition(event);
+        
+        UserJourney newJourney = journey.onFulfilled(condition);
+        
+        if (!newJourney.currentState().equals(journey.currentState())) {
+            System.out.println("Customer progressed: " + 
+                journey.currentState().name() + " → " +
+                newJourney.currentState().name());
+            
+            this.journey = newJourney;
+            
+            // Trigger recommendations for next steps
+            recommendNextSteps();
+        }
+    }
+    
+    private void recommendNextSteps() {
+        // Find products customer can now access
+        Set<Product> newProducts = journey.currentState().availableProducts();
+        
+        // Or suggest paths to higher-value products
+        Set<CustomerPath> pathsToPremium = 
+            journey.waysToAchieve(ProductType.PREMIUM);
+        
+        if (!pathsToPremium.isEmpty()) {
+            CustomerPath shortest = pathsToPremium.stream()
+                .min(Comparator.comparingInt(CustomerPath::length))
+                .get();
+            
+            System.out.println("Suggested path to premium: " + 
+                shortest.conditions());
+        }
+    }
+}
+```
+
+### Multi-Criteria Path Optimization
+
+```java
+public class PathOptimizer {
+    
+    public CustomerPath findBestPath(
+            UserJourney journey,
+            ProductType goal,
+            double costWeight,
+            double timeWeight,
+            double conversionWeight) {
+        
+        Set<CustomerPath> allPaths = journey.waysToAchieve(goal);
+        
+        return allPaths.stream()
+            .min(Comparator.comparingDouble(path -> 
+                costWeight * path.weight(this::cost) +
+                timeWeight * path.weight(this::time) +
+                conversionWeight * path.weight(this::inverseConversion)
+            ))
+            .orElseThrow();
+    }
+    
+    private double cost(Condition c) {
+        return pricingService.getConditionCost(c);
+    }
+    
+    private double time(Condition c) {
+        return analyticsService.getAverageCompletionTime(c);
+    }
+    
+    private double inverseConversion(Condition c) {
+        // Lower conversion = higher weight (worse)
+        return 1.0 / analyticsService.getConversionRate(c);
+    }
+}
+```
+
+### A/B Testing Paths
+
+```java
+public class JourneyExperiment {
+    
+    public void runExperiment(UserJourneyId userId) {
+        // Variant A: Traditional funnel
+        UserJourney variantA = buildTraditionalJourney(userId);
+        
+        // Variant B: Accelerated onboarding
+        UserJourney variantB = buildAcceleratedJourney(userId);
+        
+        UserJourney assigned = randomAssignment() ? variantA : variantB;
+        
+        // Track which paths customers take
+        Set<CustomerPath> paths = assigned.waysToAchieve(ProductType.PREMIUM);
+        
+        logExperimentData(userId, assigned, paths);
+    }
+}
+```
+
+## Algorithm Complexity
+
+### waysToAchieve()
+- **Algorithm**: All directed paths (JGraphT AllDirectedPaths)
+- **Complexity**: Exponential in worst case - O(V! * E)
+- **Practical**: Efficient for typical journey graphs with 5-20 states
+
+### optimizedWayToAchieve()
+- **Complexity**: Same as waysToAchieve() + O(P log P) for sorting, where P = number of paths
+- **Note**: Not using Dijkstra as we need all paths, not just shortest
+
+### onFulfilled()
+- **Complexity**: O(E) where E = outgoing edges from current state
+- **Typical**: O(1) as states usually have few outgoing transitions
+
+## Design Patterns
+
+### Immutable State Machine
+
+UserJourney is immutable - onFulfilled() returns a new instance rather than modifying state:
+
+```java
+UserJourney j1 = initialJourney;
+UserJourney j2 = j1.onFulfilled(condition);  // New instance
+// j1 unchanged, can be used for rollback or comparison
+```
+
+### Fluent Builder
+
+Builder provides readable journey construction:
+
+```java
+from(stateA).on(conditionX).goto_(stateB)
+```
+
+### Strategy Pattern for Optimization
+
+Weight functions allow pluggable optimization strategies:
+
+```java
+journey.optimizedWayToAchieve(goal, costMinimization);
+journey.optimizedWayToAchieve(goal, timeMinimization);
+journey.optimizedWayToAchieve(goal, conversionMaximization);
+```
+
+## Related Types
+
+- **UserJourneyId**: Unique identifier for journeys
+- **State**: Represents a stage in the customer journey
+- **Condition**: Trigger for state transitions
+- **CustomerPath**: Sequence of conditions forming a path
+- **Product**: Product available in a state
+- **ProductType**: Category of products
+
+## References
+
+- Source: `/workspace/source/graphs/src/main/java/com/softwarearchetypes/graphs/userjourney/`
+- UserJourney: `UserJourney.java:15-54`
+- Builder: `UserJourney.java:57-112`
+- CustomerPath: `CustomerPath.java:6-25`

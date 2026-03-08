@@ -1,0 +1,478 @@
+---
+title: "CatalogEntry"
+description: "Commercial offering position representing what's available for sale"
+---
+
+## Overview
+
+`CatalogEntry` represents a commercial offering position - what the organization currently offers to customers. While `Product` defines what something IS (business/operational definition), `CatalogEntry` defines that something is FOR SALE (commercial availability).
+
+**Package:** `com.softwarearchetypes.product`
+
+**Source:** `/product/src/main/java/com/softwarearchetypes/product/CatalogEntry.java:22`
+
+## Key Differences from Product
+
+- **displayName**: Marketing name (vs technical name)
+- **description**: Sales copy (vs technical description)
+- **categories**: For navigation/search
+- **validity**: When it's available for purchase
+- **metadata**: Flexible attributes (featured, badges, promotions, etc.)
+
+## Constructor
+
+```java
+private CatalogEntry(CatalogEntryId id,
+                    String displayName,
+                    String description,
+                    Product product,
+                    Set<String> categories,
+                    Validity validity,
+                    Map<String, String> metadata)
+```
+
+Use `CatalogEntry.builder()` to create instances.
+
+<ParamField path="id" type="CatalogEntryId" required>
+  Unique identifier for this catalog entry
+</ParamField>
+
+<ParamField path="displayName" type="String" required>
+  Marketing display name (must not be blank)
+</ParamField>
+
+<ParamField path="description" type="String" required>
+  Sales description (must not be blank)
+</ParamField>
+
+<ParamField path="product" type="Product" required>
+  The product being offered
+</ParamField>
+
+<ParamField path="categories" type="Set<String>">
+  Categories for navigation and search (defaults to empty set)
+</ParamField>
+
+<ParamField path="validity" type="Validity" required>
+  Time period when this entry is available for purchase
+</ParamField>
+
+<ParamField path="metadata" type="Map<String, String>">
+  Flexible key-value attributes (defaults to empty map)
+</ParamField>
+
+## Builder Pattern
+
+### builder
+
+```java
+static Builder builder()
+```
+
+Creates a new builder for constructing CatalogEntry instances.
+
+<ResponseField name="return" type="Builder">
+  A new Builder instance
+</ResponseField>
+
+**Example:**
+```java
+CatalogEntry entry = CatalogEntry.builder()
+    .id(CatalogEntryId.random())
+    .displayName("Premium Laptop Bundle")
+    .description("High-performance laptop with accessories")
+    .product(myProduct)
+    .category("Electronics")
+    .category("Computers")
+    .validity(Validity.from(LocalDate.now()))
+    .withMetadata("featured", "true")
+    .withMetadata("badge", "Best Seller")
+    .build();
+```
+
+## Accessor Methods
+
+### id
+
+```java
+CatalogEntryId id()
+```
+
+Returns the unique identifier.
+
+<ResponseField name="return" type="CatalogEntryId">
+  The catalog entry identifier
+</ResponseField>
+
+### displayName
+
+```java
+String displayName()
+```
+
+Returns the marketing display name.
+
+<ResponseField name="return" type="String">
+  The display name
+</ResponseField>
+
+### description
+
+```java
+String description()
+```
+
+Returns the sales description.
+
+<ResponseField name="return" type="String">
+  The sales description
+</ResponseField>
+
+### product
+
+```java
+Product product()
+```
+
+Returns the associated product.
+
+<ResponseField name="return" type="Product">
+  The product being offered
+</ResponseField>
+
+### categories
+
+```java
+Set<String> categories()
+```
+
+Returns an immutable copy of the categories.
+
+<ResponseField name="return" type="Set<String>">
+  Immutable set of category names
+</ResponseField>
+
+### validity
+
+```java
+Validity validity()
+```
+
+Returns the validity period.
+
+<ResponseField name="return" type="Validity">
+  When this entry is available for purchase
+</ResponseField>
+
+### metadata
+
+```java
+Map<String, String> metadata()
+```
+
+Returns an immutable copy of the metadata.
+
+<ResponseField name="return" type="Map<String, String>">
+  Immutable map of metadata key-value pairs
+</ResponseField>
+
+## Query Methods
+
+### isAvailableAt
+
+```java
+boolean isAvailableAt(LocalDate date)
+```
+
+Checks if the entry is available for purchase at a given date.
+
+<ParamField path="date" type="LocalDate" required>
+  The date to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if available at the given date, `false` otherwise
+</ResponseField>
+
+**Example:**
+```java
+if (entry.isAvailableAt(LocalDate.now())) {
+    // Entry is currently available for purchase
+}
+```
+
+### isInCategory
+
+```java
+boolean isInCategory(String category)
+```
+
+Checks if the entry belongs to a given category.
+
+<ParamField path="category" type="String" required>
+  The category to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the entry is in this category, `false` otherwise
+</ResponseField>
+
+### getMetadata
+
+```java
+Optional<String> getMetadata(String key)
+```
+
+Returns the metadata value for a given key.
+
+<ParamField path="key" type="String" required>
+  The metadata key
+</ParamField>
+
+<ResponseField name="return" type="Optional<String>">
+  The metadata value, or empty if not present
+</ResponseField>
+
+### getMetadataOrDefault
+
+```java
+String getMetadataOrDefault(String key, String defaultValue)
+```
+
+Returns the metadata value or a default if not present.
+
+<ParamField path="key" type="String" required>
+  The metadata key
+</ParamField>
+
+<ParamField path="defaultValue" type="String" required>
+  The default value to return if key not found
+</ParamField>
+
+<ResponseField name="return" type="String">
+  The metadata value or default
+</ResponseField>
+
+### hasMetadata
+
+```java
+boolean hasMetadata(String key)
+```
+
+Checks if a metadata key exists.
+
+<ParamField path="key" type="String" required>
+  The metadata key to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the key exists, `false` otherwise
+</ResponseField>
+
+## Transformation Methods
+
+### withValidity
+
+```java
+CatalogEntry withValidity(Validity newValidity)
+```
+
+Creates a copy with updated validity (useful for discontinuation).
+
+<ParamField path="newValidity" type="Validity" required>
+  The new validity period
+</ParamField>
+
+<ResponseField name="return" type="CatalogEntry">
+  A new CatalogEntry with updated validity
+</ResponseField>
+
+**Example:**
+```java
+// Discontinue an entry
+CatalogEntry discontinued = entry.withValidity(
+    Validity.until(LocalDate.now().plusDays(30))
+);
+```
+
+### withMetadata
+
+```java
+CatalogEntry withMetadata(Map<String, String> newMetadata)
+```
+
+Creates a copy with updated metadata.
+
+<ParamField path="newMetadata" type="Map<String, String>" required>
+  The new metadata map
+</ParamField>
+
+<ResponseField name="return" type="CatalogEntry">
+  A new CatalogEntry with updated metadata
+</ResponseField>
+
+## Builder Methods
+
+The `Builder` class provides a fluent interface for constructing `CatalogEntry` instances.
+
+### id
+
+```java
+Builder id(CatalogEntryId id)
+```
+
+Sets the catalog entry ID.
+
+<ParamField path="id" type="CatalogEntryId" required>
+  The catalog entry identifier
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### displayName
+
+```java
+Builder displayName(String displayName)
+```
+
+Sets the display name.
+
+<ParamField path="displayName" type="String" required>
+  The marketing display name
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### description
+
+```java
+Builder description(String description)
+```
+
+Sets the description.
+
+<ParamField path="description" type="String" required>
+  The sales description
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### product
+
+```java
+Builder product(Product product)
+```
+
+Sets the product.
+
+<ParamField path="product" type="Product" required>
+  The product being offered
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### categories
+
+```java
+Builder categories(Set<String> categories)
+```
+
+Sets all categories at once.
+
+<ParamField path="categories" type="Set<String>" required>
+  The category set
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### category
+
+```java
+Builder category(String category)
+```
+
+Adds a single category.
+
+<ParamField path="category" type="String" required>
+  The category to add
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### validity
+
+```java
+Builder validity(Validity validity)
+```
+
+Sets the validity period.
+
+<ParamField path="validity" type="Validity" required>
+  The validity period
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### metadata
+
+```java
+Builder metadata(Map<String, String> metadata)
+```
+
+Sets all metadata at once.
+
+<ParamField path="metadata" type="Map<String, String>" required>
+  The metadata map
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### withMetadata
+
+```java
+Builder withMetadata(String key, String value)
+```
+
+Adds a single metadata entry.
+
+<ParamField path="key" type="String" required>
+  The metadata key
+</ParamField>
+
+<ParamField path="value" type="String" required>
+  The metadata value
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### build
+
+```java
+CatalogEntry build()
+```
+
+Builds the CatalogEntry instance.
+
+<ResponseField name="return" type="CatalogEntry">
+  The constructed CatalogEntry
+</ResponseField>
+
+**Throws:** `IllegalArgumentException` if required fields are missing or invalid.

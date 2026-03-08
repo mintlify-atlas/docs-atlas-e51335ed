@@ -1,0 +1,401 @@
+---
+title: "Transaction"
+description: "Represents a financial transaction that applies entries to multiple accounts following double-entry bookkeeping principles"
+---
+
+## Overview
+
+The `Transaction` class represents a financial transaction in the accounting system. Each transaction consists of multiple entries (debits and credits) applied to different accounts. Transactions enforce double-entry bookkeeping rules by default, ensuring that debits equal credits.
+
+**Package:** `com.softwarearchetypes.accounting`
+
+**Access:** Public final class (created via `TransactionBuilder`)
+
+## Constructor
+
+```java
+Transaction(
+    TransactionId id,
+    TransactionId refId,
+    TransactionType type,
+    Instant occurredAt,
+    Instant appliesAt,
+    Map<Entry, Account> entries,
+    TransactionEntriesConstraint transactionEntriesConstraint
+)
+```
+
+<ParamField path="id" type="TransactionId" required>
+  Unique identifier for the transaction
+</ParamField>
+
+<ParamField path="refId" type="TransactionId">
+  Reference to another transaction (e.g., for reversals). Can be null.
+</ParamField>
+
+<ParamField path="type" type="TransactionType" required>
+  Type/category of transaction (e.g., "payment", "invoice", "reversal")
+</ParamField>
+
+<ParamField path="occurredAt" type="Instant" required>
+  When the transaction occurred in real time
+</ParamField>
+
+<ParamField path="appliesAt" type="Instant" required>
+  When the transaction applies for accounting purposes (may differ from occurredAt)
+</ParamField>
+
+<ParamField path="entries" type="Map<Entry, Account>" required>
+  Map of entries to their target accounts
+</ParamField>
+
+<ParamField path="transactionEntriesConstraint" type="TransactionEntriesConstraint" required>
+  Constraint to validate entries (e.g., balancing constraint)
+</ParamField>
+
+**Note:** Use `TransactionBuilder` instead of calling this constructor directly.
+
+## Properties
+
+### id
+
+Returns the unique transaction identifier.
+
+```java
+public TransactionId id()
+```
+
+<ResponseField name="TransactionId" type="TransactionId">
+  The transaction's unique identifier
+</ResponseField>
+
+### refId
+
+Returns the reference transaction ID if this transaction references another.
+
+```java
+Optional<TransactionId> refId()
+```
+
+<ResponseField name="Optional" type="Optional<TransactionId>">
+  Reference transaction ID for reversals or related transactions, or empty
+</ResponseField>
+
+### type
+
+Returns the transaction type.
+
+```java
+TransactionType type()
+```
+
+<ResponseField name="TransactionType" type="TransactionType">
+  The type/category of this transaction
+</ResponseField>
+
+**Common Types:**
+- `INITIALIZATION` - Opening balances
+- `REVERSAL` - Reversal of previous transaction
+- `EXPIRATION_COMPENSATION` - Compensating expired entries
+- Custom types: "transfer", "payment", "invoice", etc.
+
+### occurredAt
+
+Returns when the transaction occurred in real time.
+
+```java
+Instant occurredAt()
+```
+
+<ResponseField name="Instant" type="Instant">
+  Real-world timestamp of when the transaction occurred
+</ResponseField>
+
+### appliesAt
+
+Returns when the transaction applies for accounting purposes.
+
+```java
+Instant appliesAt()
+```
+
+<ResponseField name="Instant" type="Instant">
+  Accounting timestamp determining when this transaction affects balances
+</ResponseField>
+
+**Use Case:** A transaction might occur on Jan 31 but apply on Feb 1 for accounting period purposes.
+
+### accountsInvolved
+
+Returns all accounts affected by this transaction.
+
+```java
+Set<Account> accountsInvolved()
+```
+
+<ResponseField name="Set" type="Set<Account>">
+  All accounts that have entries in this transaction
+</ResponseField>
+
+### entries
+
+Returns all entries grouped by account.
+
+```java
+Map<Account, List<Entry>> entries()
+```
+
+<ResponseField name="Map" type="Map<Account, List<Entry>>">
+  Immutable map of accounts to their entries in this transaction
+</ResponseField>
+
+## Methods
+
+### execute
+
+Executes the transaction by applying all entries to their accounts.
+
+```java
+void execute()
+```
+
+**Side Effects:**
+- Adds entries to each involved account
+- Updates account balances
+- Generates domain events for each entry
+
+**Note:** Package-private method. Use `AccountingFacade.execute()` instead.
+
+## Transaction Constraints
+
+Transactions are validated using `TransactionEntriesConstraint` implementations:
+
+### BALANCING_CONSTRAINT
+
+Ensures that debits equal credits for double-entry accounts.
+
+```java
+TransactionEntriesConstraint.BALANCING_CONSTRAINT
+```
+
+**Validation:** Sum of all entries on double-entry accounts must equal zero.
+
+**Error Message:** "Entry balance within transaction must always be 0"
+
+**Note:** OFF_BALANCE accounts are excluded from this constraint.
+
+### MIN_2_ENTRIES_CONSTRAINT
+
+Ensures at least two entries per transaction.
+
+```java
+TransactionEntriesConstraint.MIN_2_ENTRIES_CONSTRAINT
+```
+
+**Validation:** Transaction must have at least 2 entries.
+
+**Error Message:** "Transaction must have at least 2 entries"
+
+### MIN_2_ACCOUNTS_INVOLVED_CONSTRAINT
+
+Ensures at least two different accounts are involved.
+
+```java
+TransactionEntriesConstraint.MIN_2_ACCOUNTS_INVOLVED_CONSTRAINT
+```
+
+**Validation:** Transaction must involve at least 2 distinct accounts.
+
+**Error Message:** "Transaction must involve at least 2 accounts"
+
+## Creating Transactions
+
+### Using TransactionBuilder
+
+The recommended way to create transactions is through `TransactionBuilder`:
+
+```java
+TransactionBuilder builder = facade.transaction();
+
+Transaction transaction = builder
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("payment")
+    .withMetadata("orderId", "12345", "customer", "ACME Corp")
+    .executing()
+    .debitFrom(cashAccount, Money.of(1000, "PLN"))
+    .creditTo(revenueAccount, Money.of(1000, "PLN"))
+    .build();
+
+Result<String, TransactionId> result = facade.execute(transaction);
+```
+
+### Simple Transfer
+
+For basic transfers between two accounts:
+
+```java
+Result<String, TransactionId> result = facade.transfer(
+    fromAccount,
+    toAccount,
+    Money.of(500, "PLN"),
+    Instant.now(),
+    Instant.now()
+);
+```
+
+### Complex Transaction with Multiple Entries
+
+```java
+Transaction complexTx = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("invoice")
+    .executing()
+    .debitFrom(receivablesAccount, Money.of(1230, "PLN"))
+    .creditTo(revenueAccount, Money.of(1000, "PLN"))
+    .creditTo(vatAccount, Money.of(230, "PLN"))
+    .build();
+
+facade.execute(complexTx);
+```
+
+### Transaction with Entry Validity
+
+Entries can have validity periods:
+
+```java
+Validity validity = Validity.between(
+    Instant.now(),
+    Instant.now().plus(30, ChronoUnit.DAYS)
+);
+
+Transaction tempTx = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("temporary_hold")
+    .executing()
+    .creditTo(holdAccount, Money.of(500, "PLN"), validity)
+    .debitFrom(cashAccount, Money.of(500, "PLN"))
+    .build();
+```
+
+## Reversing Transactions
+
+To reverse a previously executed transaction:
+
+```java
+Transaction reversal = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .reverting(originalTransactionId)
+    .build();
+
+Result<String, TransactionId> result = facade.execute(reversal);
+```
+
+**Behavior:**
+- Automatically creates opposite entries for all original entries
+- Sets `refId` to the original transaction ID
+- Sets type to `REVERSAL`
+- Debits become credits and vice versa
+
+### Using ReverseTransactionCommand
+
+```java
+ReverseTransactionCommand command = new ReverseTransactionCommand(
+    originalTransactionId.value().toString(),
+    Instant.now(),
+    Instant.now()
+);
+
+Result<String, TransactionId> result = facade.handle(command);
+```
+
+## Transaction Views
+
+To query transaction details:
+
+```java
+Optional<TransactionView> txView = facade.findTransactionBy(transactionId);
+
+txView.ifPresent(view -> {
+    System.out.println("Transaction: " + view.id());
+    System.out.println("Type: " + view.type());
+    System.out.println("Occurred: " + view.occurredAt());
+    System.out.println("Applies: " + view.appliesAt());
+    
+    if (view.refId() != null) {
+        System.out.println("References: " + view.refId());
+    }
+    
+    view.entries().forEach(accountEntries -> {
+        System.out.println("Account: " + accountEntries.account().name());
+        accountEntries.entries().forEach(entry -> {
+            System.out.println("  " + entry.type() + ": " + entry.amount());
+        });
+    });
+});
+```
+
+## Related Types
+
+### TransactionId
+
+```java
+public record TransactionId(UUID value) {
+    public static TransactionId generate()
+    public static TransactionId of(UUID uuid)
+}
+```
+
+### TransactionType
+
+Value object representing transaction types:
+
+```java
+TransactionType.of("payment")
+TransactionType.INITIALIZATION
+TransactionType.REVERSAL
+TransactionType.EXPIRATION_COMPENSATION
+```
+
+### TransactionView
+
+Read model for querying transaction data:
+
+```java
+public record TransactionView(
+    TransactionId id,
+    TransactionId refId,
+    TransactionType type,
+    Instant occurredAt,
+    Instant appliesAt,
+    List<TransactionAccountEntriesView> entries
+)
+```
+
+## Best Practices
+
+1. **Use TransactionBuilder**: Always create transactions through the builder pattern for proper validation
+
+2. **Set Meaningful Types**: Use descriptive transaction types for better reporting and auditing
+
+3. **Include Metadata**: Attach relevant business context using `withMetadata()`
+
+4. **Distinguish occurredAt vs appliesAt**: 
+   - `occurredAt`: When the event happened in reality
+   - `appliesAt`: When it should affect accounting reports
+
+5. **Handle Results**: Always check `Result` return values for success/failure
+
+6. **Use Transfers for Simple Cases**: The `transfer()` method is simpler than building transactions manually
+
+7. **Validate Before Execute**: Let constraints validate your entries before execution
+
+## Related Classes
+
+- [AccountingFacade](/api/accounting/facade) - Main interface for executing transactions
+- [Entry](/api/accounting/entry) - Individual debit/credit entries
+- [Account](/api/accounting/account) - Accounts affected by transactions
+- `TransactionBuilder` - Builder for constructing transactions

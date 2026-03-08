@@ -1,0 +1,171 @@
+---
+title: 'Overview'
+description: 'Understanding the philosophical foundation of Archetypy Oprogramowania'
+icon: 'compass'
+---
+
+## Philosophy
+
+**Archetypy Oprogramowania** (Software Archetypes) is a collection of reusable, domain-driven architectural patterns built around universal business concepts. Rather than providing generic frameworks, this project delivers concrete implementations of patterns that recur across different business domains.
+
+<Note>
+The project is licensed under **CC BY-NC-SA 4.0** - free for learning and non-commercial use. Commercial use requires permission from the authors.
+</Note>
+
+## Core Principles
+
+The architecture is built on several foundational principles:
+
+<AccordionGroup>
+  <Accordion title="Domain-Driven Design" icon="cube">
+    Each module represents a complete bounded context with its own ubiquitous language. The codebase is organized around business concepts (Accounting, Pricing, Product, Party, Inventory) rather than technical layers.
+  </Accordion>
+
+  <Accordion title="Functional Error Handling" icon="shield-check">
+    The `Result<F, S>` monad eliminates null checks and exceptions for expected failures. Every operation that can fail returns either `Success<S>` or `Failure<F>`, making error paths explicit and composable.
+    
+    ```java
+    Result<String, AccountId> result = createAccount(request);
+    return result.map(id -> findAccount(id))
+                 .flatMap(account -> transfer(account, amount))
+                 .fold(
+                   error -> Response.error(error),
+                   success -> Response.ok(success)
+                 );
+    ```
+  </Accordion>
+
+  <Accordion title="Facade Pattern for Encapsulation" icon="layer-group">
+    Every module exposes a single entry point - a Facade class that hides internal complexity. Clients interact only with:
+    - Commands (write operations)
+    - Queries (read operations)  
+    - Views (read models)
+    
+    This creates a clean API boundary and allows internal implementation changes without breaking clients.
+  </Accordion>
+
+  <Accordion title="Event-Driven Architecture" icon="bolt">
+    Domain events capture significant business occurrences. The system uses an `EventPublisher` interface with in-memory implementation for decoupled communication between modules.
+    
+    ```java
+    eventPublisher.publish(new CreditEntryRegistered(
+      accountId, transactionId, amount, occurredAt
+    ));
+    ```
+  </Accordion>
+
+  <Accordion title="Immutability by Default" icon="lock">
+    Value objects and entities favor immutability. Java records are used extensively for:
+    - Value objects (`Money`, `Quantity`, `AccountId`)
+    - Commands and queries
+    - View models
+    
+    This eliminates entire classes of bugs related to shared mutable state.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture at a Glance
+
+The project consists of 11 modules, each implementing a specific business archetype:
+
+<CardGroup cols={2}>
+  <Card title="Common" icon="toolbox">
+    Foundation utilities: `Result` monad, event infrastructure, preconditions, and collection transformations.
+  </Card>
+  
+  <Card title="Quantity" icon="weight-scale">
+    Type-safe quantity measurements with units (kg, liters, pieces) and `Money` implementation with multi-currency support.
+  </Card>
+  
+  <Card title="Accounting" icon="calculator">
+    Double-entry bookkeeping system with accounts, transactions, entries, and temporal queries (balance as-of date).
+  </Card>
+  
+  <Card title="Pricing" icon="tag">
+    Flexible pricing calculations with multiple calculator types, components, versioning, and interpretation patterns (total/unit/marginal).
+  </Card>
+  
+  <Card title="Product" icon="box">
+    Product type definitions with features, constraints, and tracking strategies (individually tracked, batch, bulk).
+  </Card>
+  
+  <Card title="Party" icon="users">
+    Party/Role pattern for modeling people, organizations, and their relationships with address management.
+  </Card>
+  
+  <Card title="Inventory" icon="warehouse">
+    Inventory tracking with product instances, availability management, and resource reservation.
+  </Card>
+  
+  <Card title="Ordering" icon="cart-shopping">
+    Order management with line items, state machines, and order processing workflows.
+  </Card>
+  
+  <Card title="Graphs" icon="diagram-project">
+    Graph data structures for representing hierarchies and relationships.
+  </Card>
+  
+  <Card title="Rules" icon="gavel">
+    Business rules engine for encoding complex domain logic.
+  </Card>
+  
+  <Card title="Plan vs Execution" icon="chart-gantt">
+    Temporal modeling for comparing planned activities against actual execution.
+  </Card>
+</CardGroup>
+
+## Module Structure
+
+Each module follows a consistent internal structure:
+
+```
+module/
+├── src/main/java/com/softwarearchetypes/{module}/
+│   ├── {Module}Facade.java          # Single entry point
+│   ├── {Module}Configuration.java   # Spring/DI setup
+│   ├── {Entity}.java                # Domain entities
+│   ├── {ValueObject}.java           # Value objects (often records)
+│   ├── {Module}Commands.java        # Write operations
+│   ├── {Module}Queries.java         # Read operations
+│   ├── {Module}Views.java           # Read models
+│   ├── events/                      # Domain events
+│   │   └── {Event}.java
+│   └── {Repository}.java            # Persistence abstractions
+└── src/test/java/                   # Tests
+```
+
+<Tip>
+Start exploring with the `common` module to understand the foundational patterns, then move to `quantity` and `accounting` to see these patterns in action.
+</Tip>
+
+## Technology Stack
+
+The project uses:
+
+- **Java 21** with modern features (records, sealed interfaces, pattern matching)
+- **Maven** for build and dependency management
+- **In-memory repositories** for examples (easily replaced with real persistence)
+- **JavaMoney** for currency handling
+- **JUnit** for testing
+
+<Note>
+The architecture is persistence-agnostic. Repository interfaces can be implemented with JPA, JDBC, MongoDB, or any other storage technology.
+</Note>
+
+## Learning Path
+
+We recommend this learning sequence:
+
+1. **[Archetypes](/concepts/archetypes)** - Understand the business archetypes and their relationships
+2. **[Design Patterns](/concepts/design-patterns)** - Deep dive into the technical patterns used
+3. **Module-specific guides** - Explore individual modules based on your domain interests
+
+## Authors
+
+Archetypy Oprogramowania is created and maintained by:
+
+- **Bartłomiej Słota**
+- **Jakub Pilimon**  
+- **Sławomir Sobótka**
+
+The project represents years of experience distilled into reusable, production-ready patterns for enterprise software development.

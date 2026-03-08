@@ -1,0 +1,223 @@
+---
+title: Common Module
+description: Core utilities and patterns used across all archetypes
+icon: wrench
+---
+
+## Overview
+
+The **Common** module provides fundamental building blocks and utilities used throughout the Archetypy Oprogramowania framework. It contains reusable patterns for error handling, versioning, event publishing, and common operations.
+
+## Key Components
+
+### Result Pattern
+
+The `Result<F, S>` type provides a functional approach to error handling, representing either a success or failure state.
+
+<CodeGroup>
+```java Result Definition
+public sealed interface Result<F, S> permits Result.Success, Result.Failure {
+    boolean success();
+    boolean failure();
+    S getSuccess();
+    F getFailure();
+    
+    static <F, S> Result<F, S> success(S value);
+    static <F, S> Result<F, S> failure(F value);
+}
+```
+
+```java Usage Example
+Result<String, AccountId> result = createAccount(request);
+
+if (result.success()) {
+    AccountId id = result.getSuccess();
+    // Handle success
+} else {
+    String error = result.getFailure();
+    // Handle failure
+}
+```
+</CodeGroup>
+
+#### Result Operations
+
+<AccordionGroup>
+  <Accordion title="Mapping Operations">
+    Transform success or failure values:
+    
+    ```java
+    Result<String, Integer> result = Result.success(5);
+    
+    // Map success value
+    Result<String, String> mapped = result.map(val -> "Value: " + (val * 2));
+    // Result: Success("Value: 10")
+    
+    // Map failure value
+    Result<String, Integer> failed = Result.failure(404);
+    Result<String, Integer> mappedFailure = failed.mapFailure(code -> "Error " + code);
+    ```
+  </Accordion>
+
+  <Accordion title="FlatMap for Chaining">
+    Chain operations that may fail:
+    
+    ```java
+    Result<String, Integer> result = Result.success(5)
+        .flatMap(val -> validateValue(val))
+        .flatMap(val -> processValue(val))
+        .flatMap(val -> saveValue(val));
+    ```
+  </Accordion>
+
+  <Accordion title="Composite Results">
+    Accumulate multiple results with fail-fast semantics:
+    
+    ```java
+    CompositeResult<String, Integer> composite = Result.composite();
+    
+    Result<String, List<Integer>> final = composite
+        .accumulate(Result.success(1))
+        .accumulate(Result.success(2))
+        .accumulate(Result.success(3))
+        .toResult();
+    // Result: Success([1, 2, 3])
+    
+    // Stops on first failure
+    Result<String, List<Integer>> failed = Result.composite()
+        .accumulate(Result.success(1))
+        .accumulate(Result.failure("Error"))
+        .accumulate(Result.success(3))  // Not executed
+        .toResult();
+    // Result: Failure("Error")
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Version
+
+Simple value object for optimistic locking and versioning:
+
+```java Version.java
+public record Version(long value) {
+    public static Version initial() {
+        return new Version(0L);
+    }
+    
+    public static Version of(long value) {
+        return new Version(value);
+    }
+}
+```
+
+**Usage:**
+```java
+Account account = new Account(accountId, type, name, Version.initial());
+// Version is incremented on each update for optimistic locking
+```
+
+### Event Publishing
+
+Simple event publisher interface for domain events:
+
+```java EventPublisher Interface
+public interface EventPublisher {
+    void publish(PublishedEvent event);
+    void publish(List<? extends PublishedEvent> events);
+    void register(EventHandler eventHandler);
+}
+```
+
+**Implementation:**
+```java
+// In-memory implementation
+EventPublisher publisher = new InMemoryEventsPublisher();
+
+// Register handlers
+publisher.register(event -> {
+    if (event instanceof AccountCreated) {
+        // Handle account creation
+    }
+});
+
+// Publish events
+publisher.publish(new AccountCreatedEvent(accountId));
+```
+
+### Utility Classes
+
+<CardGroup cols={2}>
+  <Card title="Preconditions" icon="shield-check">
+    Argument validation utilities:
+    ```java
+    Preconditions.checkNotNull(value, "Value cannot be null");
+    Preconditions.checkArgument(amount >= 0, "Amount must be positive");
+    ```
+  </Card>
+  
+  <Card title="Pair" icon="link">
+    Generic pair container:
+    ```java
+    Pair<String, Integer> pair = Pair.of("key", 123);
+    String first = pair.first();
+    Integer second = pair.second();
+    ```
+  </Card>
+  
+  <Card title="StringUtils" icon="text">
+    String manipulation utilities for common operations.
+  </Card>
+  
+  <Card title="CollectionTransformations" icon="list">
+    Functional operations on collections.
+  </Card>
+</CardGroup>
+
+## Design Patterns
+
+<Note>
+  The Common module demonstrates several important patterns:
+  - **Result Type**: Functional error handling without exceptions
+  - **Sealed Interfaces**: Type-safe sum types (Java 17+)
+  - **Value Objects**: Immutable data containers (records)
+  - **Event-Driven Architecture**: Decoupled communication via events
+</Note>
+
+## Testing
+
+The module includes comprehensive test coverage:
+
+```java Test Example
+@Test
+void shouldCombineTwoSuccessResults() {
+    Result<Integer, Integer> firstResult = Result.success(10);
+    Result<Integer, Integer> secondResult = Result.success(20);
+    
+    BiFunction<Integer, Integer, Integer> successCombiner = Integer::sum;
+    BiFunction<Integer, Integer, Integer> failureCombiner = (v1, v2) -> v1 - v2;
+    
+    Result<Integer, Integer> combined = 
+        firstResult.combine(secondResult, failureCombiner, successCombiner);
+    
+    assertEquals(30, combined.getSuccess());
+}
+```
+
+## Dependencies
+
+- **Java 21**: Uses modern Java features (records, sealed interfaces)
+- **JUnit 5**: Testing framework
+- **No runtime dependencies**: Pure Java implementation
+
+## Best Practices
+
+1. **Use Result instead of exceptions** for expected error cases
+2. **Version all aggregates** for optimistic locking
+3. **Publish domain events** for cross-module communication
+4. **Validate early** using Preconditions at boundaries
+
+## Related Modules
+
+- All other modules depend on Common
+- Provides foundation for [Quantity](/modules/quantity) value objects
+- Event system used in [Accounting](/modules/accounting) and [Ordering](/modules/ordering)

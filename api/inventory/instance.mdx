@@ -1,0 +1,352 @@
+---
+title: "Instance"
+description: "Represents specific instances of products"
+---
+
+## Overview
+
+`Instance` represents a specific instance/exemplar of a Product. While Product defines WHAT can be sold, Instance represents WHAT WAS actually sold/created.
+
+**Package:** `com.softwarearchetypes.inventory`
+
+**Source:** `/inventory/src/main/java/com/softwarearchetypes/inventory/Instance.java:20`
+
+## Interface
+
+```java
+interface Instance
+```
+
+Common interface for:
+- **ProductInstance**: Specific instance of a ProductType (e.g., iPhone with serial ABC123)
+- **PackageInstance**: Specific instance of a PackageType (e.g., laptop bundle with customer's choices)
+
+## Tracking Requirements
+
+Every instance must be tracked by at least one of:
+- **SerialNumber**: Individual tracking (unique identifier per item)
+- **Batch**: Group tracking (multiple items tracked together)
+
+## Core Methods
+
+### id
+
+```java
+InstanceId id()
+```
+
+Returns the unique instance identifier.
+
+<ResponseField name="return" type="InstanceId">
+  The instance ID
+</ResponseField>
+
+### productId
+
+```java
+ProductIdentifier productId()
+```
+
+Returns the product identifier this instance belongs to.
+
+<ResponseField name="return" type="ProductIdentifier">
+  The product identifier
+</ResponseField>
+
+### serialNumber
+
+```java
+Optional<SerialNumber> serialNumber()
+```
+
+Returns the serial number if this instance has individual tracking.
+
+<ResponseField name="return" type="Optional<SerialNumber>">
+  The serial number, or empty if tracked by batch
+</ResponseField>
+
+### batchId
+
+```java
+Optional<BatchId> batchId()
+```
+
+Returns the batch ID if this instance is tracked as part of a batch.
+
+<ResponseField name="return" type="Optional<BatchId>">
+  The batch ID, or empty if individually tracked
+</ResponseField>
+
+### quantity
+
+```java
+Optional<Quantity> quantity()
+```
+
+Returns the quantity for this instance (relevant for batch-tracked items).
+
+<ResponseField name="return" type="Optional<Quantity>">
+  The quantity, or empty if not applicable
+</ResponseField>
+
+### effectiveQuantity
+
+```java
+default Quantity effectiveQuantity()
+```
+
+Returns the effective quantity - either the explicit quantity or 1 piece as default. Used for counting/summing instances.
+
+<ResponseField name="return" type="Quantity">
+  The effective quantity (never null)
+</ResponseField>
+
+## Tracking Strategies
+
+### Individual Tracking (Serial Number)
+
+Used when each item needs unique identification:
+
+**Examples:**
+- Electronics with IMEI (phones)
+- Vehicles with VIN
+- High-value items requiring warranty tracking
+
+```java
+Instance phone = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(phoneProductId)
+    .serialNumber(new ImeiSerialNumber("123456789012345"))
+    .build();
+
+assert phone.serialNumber().isPresent();
+assert phone.batchId().isEmpty();
+assert phone.effectiveQuantity().equals(Quantity.of(1, Unit.pieces()));
+```
+
+### Batch Tracking
+
+Used when individual identity is unimportant but origin/quality control matters:
+
+**Examples:**
+- Food products with expiry dates
+- Manufactured parts from same production run
+- Chemicals and pharmaceuticals
+
+```java
+Instance flour = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(flourProductId)
+    .batchId(BatchId.of("BATCH-2024-001"))
+    .quantity(Quantity.of(25, Unit.kilograms()))
+    .build();
+
+assert flour.batchId().isPresent();
+assert flour.serialNumber().isEmpty();
+assert flour.quantity().isPresent();
+assert flour.effectiveQuantity().equals(Quantity.of(25, Unit.kilograms()));
+```
+
+## InstanceBuilder
+
+The `InstanceBuilder` class provides a fluent API for creating instances.
+
+**Source:** `/inventory/src/main/java/com/softwarearchetypes/inventory/InstanceBuilder.java`
+
+### Example Usage
+
+```java
+// Individually tracked instance
+Instance laptop = InstanceBuilder.forProduct(laptopProductId)
+    .withSerialNumber(new TextualSerialNumber("LAP-2024-001"))
+    .build();
+
+// Batch tracked instance
+Instance milk = InstanceBuilder.forProduct(milkProductId)
+    .withBatch(batchId)
+    .withQuantity(Quantity.of(10, Unit.liters()))
+    .build();
+```
+
+## ProductInstance
+
+Concrete implementation for product instances.
+
+**Source:** `/inventory/src/main/java/com/softwarearchetypes/inventory/ProductInstance.java`
+
+```java
+class ProductInstance implements Instance
+```
+
+### Constructor
+
+```java
+private ProductInstance(InstanceId id,
+                       ProductIdentifier productId,
+                       SerialNumber serialNumber,
+                       BatchId batchId,
+                       Quantity quantity)
+```
+
+<ParamField path="id" type="InstanceId" required>
+  Instance identifier
+</ParamField>
+
+<ParamField path="productId" type="ProductIdentifier" required>
+  Product identifier
+</ParamField>
+
+<ParamField path="serialNumber" type="SerialNumber">
+  Serial number (required if no batch)
+</ParamField>
+
+<ParamField path="batchId" type="BatchId">
+  Batch ID (required if no serial number)
+</ParamField>
+
+<ParamField path="quantity" type="Quantity">
+  Quantity (typically used with batch)
+</ParamField>
+
+### builder
+
+```java
+static Builder builder()
+```
+
+Creates a builder for constructing ProductInstance.
+
+<ResponseField name="return" type="Builder">
+  A new Builder instance
+</ResponseField>
+
+## Usage Examples
+
+### Electronics Store
+
+```java
+// Phone with IMEI
+Instance iPhone = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(iPhoneProductId)
+    .serialNumber(new ImeiSerialNumber("353456789012345"))
+    .build();
+
+// Laptop with VIN-like serial
+Instance laptop = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(laptopProductId)
+    .serialNumber(new TextualSerialNumber("LAP-2024-XYZ-001"))
+    .build();
+```
+
+### Grocery Store
+
+```java
+// Fresh milk from batch
+BatchId milkBatch = BatchId.of("MILK-2024-03-08-A");
+
+Instance milk = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(milkProductId)
+    .batchId(milkBatch)
+    .quantity(Quantity.of(50, Unit.liters()))
+    .build();
+
+// Flour from batch
+BatchId flourBatch = BatchId.of("FLOUR-2024-Q1-001");
+
+Instance flour = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(flourProductId)
+    .batchId(flourBatch)
+    .quantity(Quantity.of(1000, Unit.kilograms()))
+    .build();
+```
+
+### Automotive
+
+```java
+// Car with VIN
+Instance car = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(carProductId)
+    .serialNumber(new VinSerialNumber("1HGBH41JXMN109186"))
+    .build();
+
+assert car.serialNumber().isPresent();
+VinSerialNumber vin = (VinSerialNumber) car.serialNumber().get();
+```
+
+### Pharmaceutical
+
+```java
+// Medicine from batch with expiry tracking
+BatchId medicineBatch = BatchId.of("MED-2024-001");
+
+Instance medicine = ProductInstance.builder()
+    .id(InstanceId.random())
+    .productId(medicineProductId)
+    .batchId(medicineBatch)
+    .quantity(Quantity.of(500, Unit.pieces()))
+    .build();
+
+// Check effective quantity for counting
+Quantity total = medicine.effectiveQuantity(); // 500 pieces
+```
+
+## Querying Instances
+
+Instances can be queried using the InstanceRepository:
+
+```java
+InstanceRepository repository = // ... injected
+
+// Find by serial number
+Optional<Instance> found = repository.findBySerialNumber(
+    new ImeiSerialNumber("353456789012345")
+);
+
+// Find by batch
+List<Instance> batchInstances = repository.findByBatch(milkBatch);
+
+// Find by product
+List<Instance> productInstances = repository.findByProduct(iPhoneProductId);
+```
+
+## Instance vs Product
+
+**Product (ProductType):**
+- Definition of what can be sold
+- Template/blueprint
+- Examples: "iPhone 15 Pro", "Organic Whole Milk 1L"
+
+**Instance:**
+- Specific item that was/will be sold
+- Actual physical or digital item
+- Examples: "iPhone with IMEI 353456789012345", "Milk from batch MILK-2024-03-08-A"
+
+```java
+// Product: what we sell
+ProductType iPhoneProduct = ProductType.builder()
+    .id(ProductIdentifier.random())
+    .name(ProductName.of("iPhone 15 Pro"))
+    .trackingStrategy(ProductTrackingStrategy.SERIAL_NUMBER)
+    .build();
+
+// Instances: specific items sold
+Instance phone1 = ProductInstance.builder()
+    .productId(iPhoneProduct.id())
+    .serialNumber(new ImeiSerialNumber("353456789012345"))
+    .build();
+
+Instance phone2 = ProductInstance.builder()
+    .productId(iPhoneProduct.id())
+    .serialNumber(new ImeiSerialNumber("353456789012346"))
+    .build();
+
+// Both instances are of the same product type
+assert phone1.productId().equals(phone2.productId());
+// But they are different instances
+assert !phone1.id().equals(phone2.id());
+```

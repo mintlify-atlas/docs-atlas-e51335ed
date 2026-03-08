@@ -1,0 +1,572 @@
+---
+title: "Entry"
+description: "Represents individual debit and credit entries that make up accounting transactions"
+---
+
+## Overview
+
+The `Entry` sealed interface represents individual accounting entries that record financial movements. Each entry is either a debit (`AccountDebited`) or credit (`AccountCredited`) to a specific account. Entries are created as part of transactions and cannot exist independently.
+
+**Package:** `com.softwarearchetypes.accounting`
+
+**Access:** Public sealed interface permitting `AccountDebited` and `AccountCredited`
+
+## Interface Definition
+
+```java
+sealed interface Entry permits AccountDebited, AccountCredited {
+    EntryId id();
+    TransactionId transactionId();
+    Instant occurredAt();
+    Instant appliesAt();
+    AccountId accountId();
+    Money amount();
+    MetaData metadata();
+    Validity validity();
+    Optional<EntryId> appliedTo();
+}
+```
+
+## Common Properties
+
+All entry types implement these methods:
+
+### id
+
+Returns the unique entry identifier.
+
+```java
+EntryId id()
+```
+
+<ResponseField name="EntryId" type="EntryId">
+  Unique identifier for this entry
+</ResponseField>
+
+### transactionId
+
+Returns the ID of the transaction containing this entry.
+
+```java
+TransactionId transactionId()
+```
+
+<ResponseField name="TransactionId" type="TransactionId">
+  ID of the parent transaction
+</ResponseField>
+
+### accountId
+
+Returns the ID of the account this entry affects.
+
+```java
+AccountId accountId()
+```
+
+<ResponseField name="AccountId" type="AccountId">
+  ID of the target account
+</ResponseField>
+
+### amount
+
+Returns the monetary amount of the entry.
+
+```java
+Money amount()
+```
+
+<ResponseField name="Money" type="Money">
+  Amount with currency. Positive for credits, negative for debits.
+</ResponseField>
+
+**Important:** 
+- `AccountCredited` returns the amount as-is (positive)
+- `AccountDebited` returns the amount negated (negative)
+
+### occurredAt
+
+Returns when the entry occurred in real time.
+
+```java
+Instant occurredAt()
+```
+
+<ResponseField name="Instant" type="Instant">
+  Real-world timestamp when the entry occurred
+</ResponseField>
+
+### appliesAt
+
+Returns when the entry applies for accounting purposes.
+
+```java
+Instant appliesAt()
+```
+
+<ResponseField name="Instant" type="Instant">
+  Accounting timestamp determining when this entry affects balances
+</ResponseField>
+
+### metadata
+
+Returns metadata associated with the entry.
+
+```java
+MetaData metadata()
+```
+
+<ResponseField name="MetaData" type="MetaData">
+  Key-value metadata for additional context
+</ResponseField>
+
+### validity
+
+Returns the validity period for this entry.
+
+```java
+Validity validity()
+```
+
+<ResponseField name="Validity" type="Validity">
+  Time period during which this entry is valid (defaults to "always" if not specified)
+</ResponseField>
+
+**Use Case:** Temporary holds or allocations that expire after a period.
+
+### appliedTo
+
+Returns the ID of another entry this one is applied to (for entry allocations).
+
+```java
+Optional<EntryId> appliedTo()
+```
+
+<ResponseField name="Optional" type="Optional<EntryId>">
+  Reference to another entry, or empty if this entry is not an allocation
+</ResponseField>
+
+**Use Case:** Tracking which credit entry a debit entry is consuming (e.g., payment applied to specific invoice).
+
+## AccountCredited
+
+Represents a credit entry (increases account balance for asset accounts).
+
+```java
+record AccountCredited(
+    EntryId id,
+    TransactionId transactionId,
+    AccountId accountId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata,
+    Validity validity,
+    Optional<EntryId> appliedTo
+) implements Entry
+```
+
+### Constructors
+
+#### Basic Credit
+
+```java
+AccountCredited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt
+)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  Target account for the credit
+</ParamField>
+
+<ParamField path="transactionId" type="TransactionId" required>
+  Parent transaction ID
+</ParamField>
+
+<ParamField path="amount" type="Money" required>
+  Credit amount (positive value)
+</ParamField>
+
+<ParamField path="appliesAt" type="Instant" required>
+  When credit applies
+</ParamField>
+
+<ParamField path="occurredAt" type="Instant" required>
+  When credit occurred
+</ParamField>
+
+**Defaults:**
+- `id`: Auto-generated
+- `metadata`: Empty
+- `validity`: Always valid
+- `appliedTo`: Empty
+
+#### Credit with Metadata
+
+```java
+AccountCredited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata
+)
+```
+
+#### Credit with Validity
+
+```java
+AccountCredited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata,
+    Validity validity,
+    EntryId appliedToEntryId
+)
+```
+
+<ParamField path="validity" type="Validity" required>
+  Time period when this credit is valid
+</ParamField>
+
+<ParamField path="appliedToEntryId" type="EntryId">
+  Reference to another entry (can be null)
+</ParamField>
+
+### Example Usage
+
+```java
+// Simple credit via TransactionBuilder
+facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("revenue")
+    .executing()
+    .creditTo(revenueAccount, Money.of(1000, "PLN"))
+    .debitFrom(cashAccount, Money.of(1000, "PLN"))
+    .build();
+
+// Credit with validity period
+Validity validity = Validity.between(
+    Instant.now(),
+    Instant.now().plus(30, ChronoUnit.DAYS)
+);
+
+facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("temporary_credit")
+    .executing()
+    .creditTo(holdAccount, Money.of(500, "PLN"), validity)
+    .debitFrom(cashAccount, Money.of(500, "PLN"))
+    .build();
+```
+
+## AccountDebited
+
+Represents a debit entry (decreases account balance for asset accounts).
+
+```java
+record AccountDebited(
+    EntryId id,
+    TransactionId transactionId,
+    AccountId accountId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata,
+    Validity validity,
+    Optional<EntryId> appliedTo
+) implements Entry
+```
+
+### Special Behavior
+
+**Important:** The `amount()` method returns the negated amount:
+
+```java
+@Override
+public Money amount() {
+    return amount.negate();
+}
+```
+
+This ensures debits contribute negative values to account balances.
+
+### Constructors
+
+#### Basic Debit
+
+```java
+AccountDebited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt
+)
+```
+
+<ParamField path="accountId" type="AccountId" required>
+  Target account for the debit
+</ParamField>
+
+<ParamField path="transactionId" type="TransactionId" required>
+  Parent transaction ID
+</ParamField>
+
+<ParamField path="amount" type="Money" required>
+  Debit amount (positive value, will be negated when applied)
+</ParamField>
+
+<ParamField path="appliesAt" type="Instant" required>
+  When debit applies
+</ParamField>
+
+<ParamField path="occurredAt" type="Instant" required>
+  When debit occurred
+</ParamField>
+
+#### Debit with Metadata
+
+```java
+AccountDebited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata
+)
+```
+
+#### Debit with Entry Allocation
+
+```java
+AccountDebited(
+    AccountId accountId,
+    TransactionId transactionId,
+    Money amount,
+    Instant appliesAt,
+    Instant occurredAt,
+    MetaData metadata,
+    Validity validity,
+    EntryId appliedToEntryId
+)
+```
+
+<ParamField path="appliedToEntryId" type="EntryId">
+  ID of a credit entry this debit is applied against
+</ParamField>
+
+**Use Case:** Recording that a payment (debit to cash) is applied to a specific invoice (credit to receivables).
+
+### Example Usage
+
+```java
+// Simple debit via TransactionBuilder
+facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("expense")
+    .executing()
+    .debitFrom(expenseAccount, Money.of(500, "PLN"))
+    .creditTo(cashAccount, Money.of(500, "PLN"))
+    .build();
+
+// Debit applied to specific credit entry
+facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("payment")
+    .executing()
+    .debitFrom(receivablesAccount, Money.of(1000, "PLN"), specificCreditEntryId)
+    .creditTo(cashAccount, Money.of(1000, "PLN"))
+    .build();
+```
+
+## Entry Allocations
+
+Entry allocations track which debits are applied to which credits (or vice versa). This is useful for:
+
+- Matching payments to invoices
+- Tracking which expenses consume which budget allocations
+- Implementing aging reports based on unallocated entries
+
+### Creating Allocated Entries
+
+```java
+// Credit entry (e.g., invoice)
+Transaction invoice = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("invoice")
+    .executing()
+    .debitFrom(receivablesAccount, Money.of(1000, "PLN"))
+    .creditTo(revenueAccount, Money.of(1000, "PLN"))
+    .build();
+
+facade.execute(invoice);
+
+// Later: Payment applied to specific invoice entry
+EntryId invoiceEntryId = /* retrieve from invoice transaction */;
+
+Transaction payment = facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .withTypeOf("payment")
+    .executing()
+    .debitFrom(receivablesAccount, Money.of(1000, "PLN"), invoiceEntryId)
+    .creditTo(cashAccount, Money.of(1000, "PLN"))
+    .build();
+
+facade.execute(payment);
+```
+
+### Finding Allocated Entries
+
+Use `EntryRepository.findEntriesReferencing()` to find all entries that reference a specific entry:
+
+```java
+List<Entry> allocatedPayments = entryRepository.findEntriesReferencing(invoiceEntry);
+```
+
+## Entry Validity
+
+Entries can have validity periods using the `Validity` value object:
+
+```java
+// Entry valid for 30 days
+Validity thirtyDays = Validity.between(
+    Instant.now(),
+    Instant.now().plus(30, ChronoUnit.DAYS)
+);
+
+// Entry valid forever
+Validity forever = Validity.always();
+
+// Check if valid at specific time
+boolean isValid = validity.isValidAt(Instant.now());
+boolean hasExpired = validity.hasExpired(clock.instant());
+```
+
+### Expiration Compensation
+
+When entries expire, you can automatically compensate:
+
+```java
+facade.transaction()
+    .occurredAt(Instant.now())
+    .appliesAt(Instant.now())
+    .compensatingExpired(expiredEntryId)
+    .withCompensationAccount(compensationAccountId)
+    .build()
+    .ifPresent(facade::execute);
+```
+
+This creates a transaction that reverses the remaining unallocated amount of the expired entry.
+
+## EntryView
+
+Read model for querying entry data:
+
+```java
+public record EntryView(
+    EntryId entryId,
+    EntryType type,
+    Money amount,
+    TransactionId transactionId,
+    AccountId accountId,
+    Instant occurredAt,
+    Instant appliesAt
+) {
+    public enum EntryType {
+        CREDIT,
+        DEBIT
+    }
+}
+```
+
+### Retrieving Entries
+
+```java
+// Get all entries for an account
+Optional<AccountView> accountView = facade.findAccount(accountId);
+accountView.ifPresent(view -> {
+    List<EntryView> entries = view.entries();
+    entries.forEach(entry -> {
+        System.out.println(entry.type() + ": " + entry.amount());
+    });
+});
+
+// Get entries for a transaction
+Optional<TransactionView> txView = facade.findTransactionBy(transactionId);
+txView.ifPresent(view -> {
+    view.entries().forEach(accountEntries -> {
+        System.out.println("Account: " + accountEntries.account().name());
+        accountEntries.entries().forEach(entry -> {
+            System.out.println("  " + entry.type() + ": " + entry.amount());
+        });
+    });
+});
+```
+
+## Related Types
+
+### EntryId
+
+```java
+public record EntryId(UUID value) {
+    public static EntryId generate()
+}
+```
+
+### MetaData
+
+Key-value map for storing additional entry context:
+
+```java
+MetaData metadata = MetaData.of(
+    "orderId", "12345",
+    "customerId", "CUST-001"
+);
+```
+
+### Validity
+
+Represents a time period:
+
+```java
+Validity.always()  // No expiration
+Validity.between(start, end)  // Specific period
+```
+
+## Best Practices
+
+1. **Use TransactionBuilder**: Create entries through the builder, not directly
+
+2. **Match Credits to Debits**: Use entry allocations to track which entries offset each other
+
+3. **Set Validity for Temporary Entries**: Use validity periods for holds, reservations, or temporary allocations
+
+4. **Include Metadata**: Attach business context for auditing and reporting
+
+5. **Understand Amount Signs**:
+   - Credits: Positive amounts
+   - Debits: Negative amounts (automatically negated)
+
+6. **Query via Views**: Use `AccountView` and `TransactionView` to retrieve entry information
+
+## Related Classes
+
+- [Transaction](/api/accounting/transaction) - Contains multiple entries
+- [Account](/api/accounting/account) - Target of entries
+- [AccountingFacade](/api/accounting/facade) - Creates entries via transactions

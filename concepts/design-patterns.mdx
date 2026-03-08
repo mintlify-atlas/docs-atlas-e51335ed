@@ -1,0 +1,770 @@
+---
+title: 'Design Patterns'
+description: 'Technical patterns and architectural decisions explained with real code'
+icon: 'drafting-compass'
+---
+
+## Overview
+
+Archetypy Oprogramowania implements several key design patterns consistently across all modules. Understanding these patterns is essential for working with the codebase effectively.
+
+<Note>
+These aren't just academic patterns - every example on this page comes directly from the production source code.
+</Note>
+
+## Result Monad Pattern
+
+### The Problem
+
+Traditional error handling in Java has three approaches, all with problems:
+
+```java
+// 1. Null returns - easy to forget null checks
+Account account = findAccount(id);  // Might be null!
+account.deposit(money);  // NullPointerException!
+
+// 2. Exceptions - control flow by exception, unclear which exceptions
+public Account findAccount(String id) throws AccountNotFoundException {
+    // Checked exceptions force handling, but create verbose code
+}
+
+// 3. Optional - better, but doesn't convey failure reason
+Optional<Account> account = findAccount(id);
+// Why did it fail? Not found? Invalid ID? Database error?
+```
+
+### The Solution
+
+The `Result<F, S>` type makes success and failure explicit and composable:
+
+```java
+public sealed interface Result<F, S> 
+    permits Result.Success, Result.Failure {
+    
+    record Success<F, S>(S value) implements Result<F, S> {}
+    record Failure<F, S>(F error) implements Result<F, S> {}
+}
+```
+
+**Source:** `common/src/main/java/com/softwarearchetypes/common/Result.java:14`
+
+### Real Usage Examples
+
+<Accordion title="Example 1: Account Creation with Validation">
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/AccountingFacade.java:65`
+  
+  ```java
+  private Result<String, AccountId> createAccount(
+      AccountId accountId, 
+      AccountType type, 
+      AccountName name) {
+      
+      // Check if account already exists
+      if (accountRepository.find(accountId).isPresent()) {
+          return Result.failure(
+              "Account with id " + accountId + " already exists"
+          );
+      }
+      
+      // Create and save account
+      Account account = new Account(accountId, type, name, Version.initial());
+      accountRepository.save(account);
+      
+      return Result.success(account.id());
+  }
+  ```
+  
+  **Why Result instead of Exception?**
+  - Account already existing is an *expected* business case, not an exceptional condition
+  - Caller can easily handle both paths without try-catch
+  - Error message is type-safe (String) and can be displayed to users
+</Accordion>
+
+<Accordion title="Example 2: Chaining Operations with flatMap">
+  **Pattern:** Creating accounts with initial balances requires two operations
+  
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/AccountingFacade.java:96`
+  
+  ```java
+  public Result<String, Set<AccountId>> createAccountsWithInitialBalances(
+      Set<CreateAccount> requests, 
+      AccountAmounts accountAmounts) {
+      
+      // First operation: create accounts
+      Result<String, Set<AccountId>> creation = createAccounts(requests);
+      
+      // Second operation: only if creation succeeded, initialize balances
+      Result<String, TransactionId> txResult = creation.flatMap(ids -> {
+          Transaction transaction = transactionBuilderFactory.transaction()
+              .withTypeOf(INITIALIZATION)
+              .occurredAt(clock.instant())
+              .appliesAt(clock.instant())
+              .executing()
+              .entriesFor(accountAmounts)
+              .build();
+          
+          return execute(transaction);
+      });
+      
+      // Return original account IDs if transaction succeeded, error otherwise
+      if (txResult.success()) {
+          return creation;
+      } else {
+          return Result.failure(txResult.getFailure());
+      }
+  }
+  ```
+  
+  **Key insight:** `flatMap` chains operations that each return `Result`, automatically propagating failures.
+</Accordion>
+
+<Accordion title="Example 3: Composite Results (Multiple Operations)">
+  **Pattern:** Accumulating results from multiple independent operations
+  
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/AccountingFacade.java:186`
+  
+  ```java
+  public Result<String, Set<TransactionId>> execute(
+      Transaction... transactions) {
+      
+      CompositeSetResult<String, TransactionId> result = Result.compositeSet();
+      
+      for (Transaction transaction : transactions) {
+          result = result.accumulate(execute(transaction));
+          
+          // Fail-fast: stop on first failure
+          if (result.failure()) {
+              return result.toResult();
+          }
+      }
+      
+      return result.toResult();
+  }
+  ```
+  
+  **Implementation detail** from `common/src/main/java/com/softwarearchetypes/common/Result.java:280`:
+  
+  ```java
+  public CompositeSetResult<F, S> accumulate(Result<F, S> newResult) {
+      checkNotNull(newResult, "newResult cannot be null");
+      
+      if (result.failure()) {
+          return this;  // Already failed, stay failed
+      }
+      
+      if (newResult.failure()) {
+          return new CompositeSetResult<>(newResult.getFailure());
+      }
+      
+      // Both succeeded - add to set
+      Set<S> accumulated = new HashSet<>(result.getSuccess());
+      accumulated.add(newResult.getSuccess());
+      return new CompositeSetResult<>(accumulated);
+  }
+  ```
+</Accordion>
+
+### Result API Reference
+
+**Key methods:**
+
+```java
+// Transform success value
+<R> Result<F, R> map(Function<S, R> mapper)
+
+// Transform failure value  
+<L> Result<L, S> mapFailure(Function<F, L> mapper)
+
+// Chain operations that return Result
+<R> Result<F, R> flatMap(Function<S, Result<F, R>> mapping)
+
+// Fold into single value (like pattern matching)
+<U> U fold(Function<F, U> leftMapper, Function<S, U> rightMapper)
+
+// Side effects without changing Result
+Result<F, S> peek(Consumer<S> onSuccess, Consumer<F> onFailure)
+
+// Combine two Results
+<FAILURE, SUCCESS> Result<FAILURE, SUCCESS> combine(
+    Result<F, S> other,
+    BiFunction<F, F, FAILURE> failureCombiner,
+    BiFunction<S, S, SUCCESS> successCombiner
+)
+```
+
+<Tip>
+Use `Result` instead of exceptions for:
+- Expected business failures (validation, business rule violations)
+- Operations that can fail for normal reasons
+
+Use exceptions for:
+- Truly exceptional conditions (programming errors, infrastructure failures)
+- Situations that should never happen in normal operation
+</Tip>
+
+## Facade Pattern
+
+### The Problem
+
+Domain modules become complex internally with many collaborating classes:
+- Aggregates, entities, value objects
+- Repositories for persistence
+- Domain services
+- Event publishers
+- Internal query handlers
+
+Exposing all these classes creates tight coupling and makes refactoring difficult.
+
+### The Solution
+
+**Every module exposes exactly ONE public entry point** - a Facade class:
+
+```java
+public class {Module}Facade {
+    // All dependencies are package-private or private
+    private final {Module}Repository repository;
+    private final EventPublisher eventPublisher;
+    
+    // Constructor for dependency injection
+    {Module}Facade(...dependencies) { ... }
+    
+    // Public API: Commands
+    public Result<Error, Id> handle(CreateCommand cmd) { ... }
+    public Result<Error, Id> handle(UpdateCommand cmd) { ... }
+    
+    // Public API: Queries  
+    public Optional<View> findById(Id id) { ... }
+    public List<View> findAll() { ... }
+}
+```
+
+### Real Implementation
+
+<Accordion title="AccountingFacade - Complete Example">
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/AccountingFacade.java:31`
+  
+  ```java
+  public class AccountingFacade {
+      // Private dependencies - hidden from clients
+      private final Clock clock;
+      private final AccountRepository accountRepository;
+      private final AccountViewQueries accountViewQueries;
+      private final TransactionRepository transactionRepository;
+      private final TransactionBuilderFactory transactionBuilderFactory;
+      private final EventPublisher eventPublisher;
+      
+      // Package-private constructor - called by Configuration
+      AccountingFacade(
+          Clock clock,
+          AccountRepository accountRepository,
+          AccountViewQueries accountViewQueries,
+          TransactionRepository transactionRepository,
+          TransactionBuilderFactory transactionBuilderFactory,
+          EventPublisher eventPublisher
+      ) {
+          this.clock = clock;
+          this.accountRepository = accountRepository;
+          this.accountViewQueries = accountViewQueries;
+          this.transactionRepository = transactionRepository;
+          this.transactionBuilderFactory = transactionBuilderFactory;
+          this.eventPublisher = eventPublisher;
+      }
+      
+      // ========== Commands ==========
+      
+      public Result<String, AccountId> createAccount(CreateAccount request) {
+          return createAccount(
+              request.accountId(), 
+              AccountType.valueOf(request.type()), 
+              AccountName.of(request.name())
+          );
+      }
+      
+      public Result<String, TransactionId> transfer(
+          AccountId from, AccountId to, Money amount,
+          Instant occurredAt, Instant appliesAt) {
+          try {
+              Transaction transaction = transactionBuilderFactory.transaction()
+                  .occurredAt(occurredAt)
+                  .appliesAt(appliesAt)
+                  .withTypeOf("transfer")
+                  .executing()
+                  .debitFrom(from, amount)
+                  .creditTo(to, amount)
+                  .build();
+              
+              transaction.execute();
+              transactionRepository.save(transaction);
+              saveAccountsAndPublishEvents(transaction.accountsInvolved());
+              
+              return Result.success(transaction.id());
+          } catch (Exception ex) {
+              return Result.failure(ex.getMessage());
+          }
+      }
+      
+      // ========== Queries ==========
+      
+      public Optional<Money> balance(AccountId accountId) {
+          return accountViewQueries.find(accountId)
+              .map(AccountView::balance);
+      }
+      
+      public Optional<Money> balanceAsOf(AccountId accountId, Instant when) {
+          return accountViewQueries.find(accountId)
+              .map(acc -> acc.balanceAsOf(when));
+      }
+      
+      public Optional<AccountView> findAccount(AccountId accountId) {
+          return accountViewQueries.find(accountId);
+      }
+      
+      // ========== Private Helpers ==========
+      
+      private void saveAccountsAndPublishEvents(Collection<Account> accounts) {
+          List<AccountingEvent> allEvents = new ArrayList<>();
+          
+          for (Account account : accounts) {
+              allEvents.addAll(account.getPendingEvents());
+              account.clearPendingEvents();
+          }
+          
+          accountRepository.save(accounts);
+          eventPublisher.publish(allEvents);
+      }
+  }
+  ```
+  
+  **Key aspects:**
+  - Single entry point for all accounting operations
+  - All domain complexity hidden behind clean API
+  - Commands return `Result` for error handling
+  - Queries return `Optional` or `List` of views
+  - Internal domain events managed transparently
+</Accordion>
+
+<Accordion title="PricingFacade - Auto-wrapping Calculator Interpretations">
+  **From:** `pricing/src/main/java/com/softwarearchetypes/pricing/PricingFacade.java:54`
+  
+  ```java
+  public class PricingFacade {
+      private final CalculatorRepository calculatorRepository;
+      private final ComponentRepository componentRepository;
+      private final Clock clock;
+      
+      /**
+       * Calculate total price - automatically wraps calculator 
+       * if it doesn't return TOTAL.
+       */
+      public Money calculateTotal(String calculatorName, Parameters params) {
+          Calculator calc = calculatorRepository.findByName(calculatorName)
+              .orElseThrow(() -> new IllegalArgumentException(
+                  "Could not find calculator: " + calculatorName
+              ));
+          
+          // Auto-wrap if calculator doesn't return TOTAL
+          Calculator totalCalc = switch (calc.interpretation()) {
+              case TOTAL -> calc;  // Already returns total
+              case UNIT -> UnitToTotalAdapter.wrap(
+                  calc.name() + "-to-total", calc
+              );
+              case MARGINAL -> MarginalToTotalAdapter.wrap(
+                  calc.name() + "-to-total", calc
+              );
+          };
+          
+          return totalCalc.calculate(params);
+      }
+      
+      /**
+       * Calculate unit price - automatically wraps calculator
+       * if it doesn't return UNIT.
+       */
+      public Money calculateUnitPrice(String calculatorName, Parameters params) {
+          Calculator calc = calculatorRepository.findByName(calculatorName)
+              .orElseThrow();
+          
+          Calculator unitCalc = switch (calc.interpretation()) {
+              case UNIT -> calc;  // Already returns unit price
+              case TOTAL -> TotalToUnitAdapter.wrap(
+                  calc.name() + "-to-unit", calc
+              );
+              case MARGINAL -> MarginalToUnitAdapter.wrap(
+                  calc.name() + "-to-unit", calc
+              );
+          };
+          
+          return unitCalc.calculate(params);
+      }
+  }
+  ```
+  
+  **Facade benefits demonstrated:**
+  - Hides complexity of adapter pattern from clients
+  - Client just calls `calculateTotal()` - facade handles interpretation conversion
+  - Internal calculator types can change without affecting clients
+</Accordion>
+
+### Facade Benefits
+
+<CardGroup cols={2}>
+  <Card title="Encapsulation" icon="lock">
+    Internal implementation details are hidden. Refactor domain model without breaking clients.
+  </Card>
+  
+  <Card title="Simplified API" icon="hand-sparkles">
+    Single entry point with intuitive method names. No need to understand internal collaborations.
+  </Card>
+  
+  <Card title="Transaction Boundaries" icon="border-all">
+    Facade methods define natural transaction boundaries for persistence.
+  </Card>
+  
+  <Card title="Testing" icon="flask">
+    Easy to mock facade for testing. No need to mock dozens of internal classes.
+  </Card>
+</CardGroup>
+
+## Builder Pattern
+
+### The Problem
+
+Complex domain objects with:
+- Many optional parameters
+- Validation rules
+- Multiple construction paths
+- Progressive disclosure of options
+
+### The Solution
+
+**Fluent builders with type-safe construction:**
+
+<Accordion title="ProductBuilder - Dual-Purpose Builder">
+  **From:** `product/src/main/java/com/softwarearchetypes/product/ProductBuilder.java:35`
+  
+  ```java
+  class ProductBuilder {
+      private final ProductIdentifier id;
+      private final ProductName name;
+      private final ProductDescription description;
+      private ProductMetadata metadata = ProductMetadata.empty();
+      
+      ProductBuilder(ProductIdentifier id, ProductName name, 
+                     ProductDescription description) {
+          this.id = id;
+          this.name = name;
+          this.description = description;
+      }
+      
+      // Common attributes
+      public ProductBuilder withMetadata(String key, String value) {
+          this.metadata = this.metadata.with(key, value);
+          return this;
+      }
+      
+      // Branch 1: Build ProductType
+      public ProductTypeBuilder asProductType(
+          Unit preferredUnit,
+          ProductTrackingStrategy trackingStrategy) {
+          return new ProductTypeBuilder(preferredUnit, trackingStrategy);
+      }
+      
+      // Branch 2: Build PackageType  
+      public PackageTypeBuilder asPackageType() {
+          return new PackageTypeBuilder();
+      }
+      
+      // Inner builder for ProductType
+      public class ProductTypeBuilder {
+          private final Unit preferredUnit;
+          private final ProductTrackingStrategy trackingStrategy;
+          private final List<ProductFeatureTypeDefinition> features = 
+              new ArrayList<>();
+          
+          ProductTypeBuilder(Unit preferredUnit, 
+                           ProductTrackingStrategy trackingStrategy) {
+              this.preferredUnit = preferredUnit;
+              this.trackingStrategy = trackingStrategy;
+          }
+          
+          public ProductTypeBuilder withMandatoryFeature(
+              ProductFeatureType featureType) {
+              this.features.add(
+                  ProductFeatureTypeDefinition.mandatory(featureType)
+              );
+              return this;
+          }
+          
+          public ProductTypeBuilder withOptionalFeature(
+              ProductFeatureType featureType) {
+              this.features.add(
+                  ProductFeatureTypeDefinition.optional(featureType)
+              );
+              return this;
+          }
+          
+          public ProductType build() {
+              ProductFeatureTypes featureTypes = 
+                  new ProductFeatureTypes(features);
+              return new ProductType(
+                  id, name, description, preferredUnit, 
+                  trackingStrategy, featureTypes, metadata, 
+                  applicabilityConstraint
+              );
+          }
+      }
+  }
+  ```
+  
+  **Usage:**
+  ```java
+  ProductType laptop = new ProductBuilder(id, name, description)
+      .withMetadata("category", "electronics")
+      .asProductType(Unit.pieces(), ProductTrackingStrategy.INDIVIDUALLY_TRACKED)
+          .withMandatoryFeature(colorFeature)
+          .withOptionalFeature(warrantyFeature)
+          .build();
+  ```
+  
+  **Design highlights:**
+  - Shared builder for common attributes
+  - Type-safe branching to specialized builders
+  - Inner classes have access to outer builder state
+  - Impossible to call `build()` before specifying required type-specific attributes
+</Accordion>
+
+<Accordion title="TransactionBuilder - Fluent State Machine">
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/TransactionBuilder.java`
+  
+  The transaction builder enforces business rules through its API:
+  
+  ```java
+  Transaction transaction = transactionBuilderFactory.transaction()
+      // Step 1: When did it occur?
+      .occurredAt(clock.instant())
+      // Step 2: When should it apply (effective date)?
+      .appliesAt(effectiveDate)
+      // Step 3: What type?
+      .withTypeOf("sale")
+      // Step 4: Executing new transaction or reverting existing?
+      .executing()  // or .reverting(transactionId)
+      // Step 5: Add entries
+      .debitFrom(cashAccount, Money.pln(1000))
+      .creditTo(revenueAccount, Money.pln(1000))
+      // Step 6: Build (validates balanced)
+      .build();
+  ```
+  
+  **Key insight:** The method sequence enforces business rules:
+  - Can't add entries before specifying type
+  - Can't build without balanced debits and credits
+  - Type system prevents invalid state
+</Accordion>
+
+## Event-Driven Architecture
+
+### The Pattern
+
+**Domain events** capture significant business occurrences:
+
+```java
+// Event interface
+public interface PublishedEvent {
+    Instant occurredAt();
+}
+
+// Publisher interface
+public interface EventPublisher {
+    void publish(PublishedEvent event);
+    void publish(List<? extends PublishedEvent> events);
+    void register(EventHandler eventHandler);
+}
+
+// Handler interface  
+public interface EventHandler {
+    boolean supports(PublishedEvent event);
+    void handle(PublishedEvent event);
+}
+```
+
+**Source:** `common/src/main/java/com/softwarearchetypes/common/events/`
+
+### Real Implementation
+
+<Accordion title="InMemoryEventsPublisher - Observer Pattern">
+  **From:** `common/src/main/java/com/softwarearchetypes/common/events/InMemoryEventsPublisher.java:7`
+  
+  ```java
+  public class InMemoryEventsPublisher implements EventPublisher {
+      private final Set<EventHandler> observers = new HashSet<>();
+      
+      @Override
+      public void publish(PublishedEvent event) {
+          observers.forEach(handler -> {
+              if (handler.supports(event)) {
+                  handler.handle(event);
+              }
+          });
+      }
+      
+      @Override
+      public void publish(List<? extends PublishedEvent> events) {
+          events.forEach(this::publish);
+      }
+      
+      @Override
+      public void register(EventHandler eventHandler) {
+          observers.add(eventHandler);
+      }
+  }
+  ```
+  
+  **Design notes:**
+  - Simple in-memory implementation for examples
+  - Can be replaced with message queue (Kafka, RabbitMQ) without changing domain code
+  - Handlers self-select events via `supports()` method
+</Accordion>
+
+<Accordion title="Accounting Events - Sealed Interface">
+  **From:** `accounting/src/main/java/com/softwarearchetypes/accounting/events/AccountingEvent.java:5`
+  
+  ```java
+  sealed public interface AccountingEvent extends PublishedEvent 
+      permits CreditEntryRegistered, DebitEntryRegistered {
+  }
+  ```
+  
+  **Usage in domain code:**
+  ```java
+  private void saveAccountsAndPublishEvents(Collection<Account> accounts) {
+      List<AccountingEvent> allEvents = new ArrayList<>();
+      
+      // Collect events from all modified accounts
+      for (Account account : accounts) {
+          allEvents.addAll(account.getPendingEvents());
+          account.clearPendingEvents();
+      }
+      
+      // Persist state changes
+      accountRepository.save(accounts);
+      
+      // Publish events (after successful persistence)
+      eventPublisher.publish(allEvents);
+  }
+  ```
+  
+  **Key pattern:** Events are collected during domain logic execution, then published atomically after persistence succeeds.
+</Accordion>
+
+### Event Benefits
+
+- **Decoupling:** Modules communicate through events without direct dependencies
+- **Auditability:** Events form complete audit trail of what happened
+- **Integration:** Easy to add new handlers without modifying existing code
+- **Eventual consistency:** Asynchronous processing across bounded contexts
+
+## Value Objects & Immutability
+
+### The Pattern
+
+Use Java records for value objects:
+
+```java
+// Simple value object
+public record AccountId(String value) {
+    public static AccountId of(String value) {
+        return new AccountId(value);
+    }
+}
+
+// Value object with validation
+public record Money(BigDecimal amount, String currency) {
+    public Money {
+        if (amount == null || currency == null) {
+            throw new IllegalArgumentException("Amount and currency required");
+        }
+    }
+    
+    public Money add(Money other) {
+        if (!this.currency.equals(other.currency)) {
+            throw new IllegalArgumentException("Currency mismatch");
+        }
+        return new Money(this.amount.add(other.amount), this.currency);
+    }
+}
+```
+
+**Real example from:** `quantity/src/main/java/com/softwarearchetypes/quantity/Quantity.java:13`
+
+```java
+public record Quantity(BigDecimal amount, Unit unit) 
+    implements Comparable<Quantity> {
+    
+    public Quantity {
+        checkArgument(amount != null, "Amount cannot be null");
+        checkArgument(unit != null, "Unit cannot be null");
+        checkArgument(amount.compareTo(BigDecimal.ZERO) >= 0, 
+            "Amount cannot be negative");
+    }
+    
+    public Quantity add(Quantity other) {
+        checkArgument(this.unit.equals(other.unit),
+            String.format("Cannot add quantities with different units: %s and %s",
+                this.unit, other.unit));
+        return new Quantity(this.amount.add(other.amount), this.unit);
+    }
+}
+```
+
+### Preconditions Utility
+
+**From:** `common/src/main/java/com/softwarearchetypes/common/Preconditions.java:3`
+
+```java
+public final class Preconditions {
+    public static void checkArgument(boolean expression, String errorMessage) {
+        if (!expression) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+    }
+    
+    public static void checkState(boolean state, String errorMessage) {
+        if (!state) {
+            throw new IllegalStateException(errorMessage);
+        }
+    }
+    
+    public static void checkNotNull(Object value, String errorMessage) {
+        checkArgument(value != null, errorMessage);
+    }
+}
+```
+
+<Tip>
+**When to use records:**
+- Value objects without identity (Money, Quantity, Address)
+- DTOs and views
+- Commands and queries
+- Configuration objects
+
+**When NOT to use records:**
+- Entities with identity and lifecycle
+- Objects that need mutable state
+- Classes requiring inheritance
+</Tip>
+
+## Summary
+
+The five core patterns work together:
+
+1. **Result Monad** - Explicit error handling without exceptions
+2. **Facade Pattern** - Single entry point per module
+3. **Builder Pattern** - Fluent, type-safe object construction
+4. **Event-Driven Architecture** - Decoupled communication via domain events
+5. **Value Objects** - Immutable types with validation
+
+These patterns create a consistent, maintainable architecture across all modules.
+
+<Card title="Explore Modules" icon="compass" href="/modules/accounting">
+  See these patterns in action in the module-specific documentation.
+</Card>

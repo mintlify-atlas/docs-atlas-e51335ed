@@ -1,0 +1,483 @@
+---
+title: Process Scheduling
+description: Dependency-based scheduling using directed acyclic graphs and topological sort
+---
+
+## Overview
+
+The scheduling module provides tools for scheduling process steps based on their dependencies. It uses a directed acyclic graph (DAG) to model dependencies and topological sorting to produce valid execution schedules.
+
+## Key Components
+
+### Process
+
+Represents a process with multiple steps and their dependency relationships.
+
+```java
+package com.softwarearchetypes.graphs.scheduling;
+
+record Process(
+    Set<ProcessStep> steps,
+    Graph<ProcessStep, DefaultEdge> dependencyGraph,
+    Map<EdgeKey, DependencyType> edgeDependencyTypes
+) {
+    static Builder builder();
+}
+```
+
+<ParamField path="steps" type="Set<ProcessStep>" required>
+  All process steps in the process
+</ParamField>
+
+<ParamField path="dependencyGraph" type="Graph<ProcessStep, DefaultEdge>" required>
+  Directed acyclic graph of step dependencies (JGraphT DirectedAcyclicGraph)
+</ParamField>
+
+<ParamField path="edgeDependencyTypes" type="Map<EdgeKey, DependencyType>" required>
+  Maps edges to their dependency types (FINISH_TO_START, START_TO_START, etc.)
+</ParamField>
+
+### Process.Builder
+
+Fluent builder for constructing processes with dependencies.
+
+```java
+static class Builder {
+    Builder addStep(ProcessStep step);
+    Builder addDependency(ProcessStep from, ProcessStep to);
+    Builder addDependency(ProcessStep from, ProcessStep to, DependencyType type);
+    Schedule build();
+}
+```
+
+#### addStep()
+
+Adds a process step to the process.
+
+```java
+Builder addStep(ProcessStep step)
+```
+
+<ParamField path="step" type="ProcessStep" required>
+  Process step to add
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  Builder instance for fluent chaining
+</ResponseField>
+
+#### addDependency(ProcessStep, ProcessStep)
+
+Adds a dependency between two steps (default FINISH_TO_START).
+
+```java
+Builder addDependency(ProcessStep from, ProcessStep to)
+```
+
+<ParamField path="from" type="ProcessStep" required>
+  Prerequisite step that must complete first
+</ParamField>
+
+<ParamField path="to" type="ProcessStep" required>
+  Dependent step that requires the prerequisite
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  Builder instance for fluent chaining
+</ResponseField>
+
+**Semantics:**
+- Creates a directed edge: from → to
+- "to" can only start after "from" completes (finish-to-start)
+- Automatically adds both steps to the graph if not already present
+
+#### addDependency(ProcessStep, ProcessStep, DependencyType)
+
+Adds a typed dependency between two steps.
+
+```java
+Builder addDependency(ProcessStep from, ProcessStep to, DependencyType type)
+```
+
+<ParamField path="from" type="ProcessStep" required>
+  Prerequisite step
+</ParamField>
+
+<ParamField path="to" type="ProcessStep" required>
+  Dependent step
+</ParamField>
+
+<ParamField path="type" type="DependencyType" required>
+  Type of dependency relationship
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  Builder instance for fluent chaining
+</ResponseField>
+
+**Dependency Types:**
+- `FINISH_TO_START`: to starts after from finishes (most common)
+- `START_TO_START`: to starts when from starts (parallel start)
+- `FINISH_TO_FINISH`: to finishes when from finishes (synchronized end)
+- `START_TO_FINISH`: to finishes when from starts (rare)
+
+#### build()
+
+Builds the process and generates an execution schedule.
+
+```java
+Schedule build()
+```
+
+<ResponseField name="return" type="Schedule">
+  Schedule containing topologically sorted process steps
+</ResponseField>
+
+**Algorithm:**
+1. Creates Process record with steps and dependency graph
+2. Applies topological sort to dependency graph
+3. Returns Schedule with steps in valid execution order
+
+**Throws:**
+- Cycle detection if dependencies form a cycle (enforced by DirectedAcyclicGraph)
+
+### Schedule
+
+Represents an ordered sequence of process steps.
+
+```java
+package com.softwarearchetypes.graphs.scheduling;
+
+record Schedule(List<ProcessStep> steps) {
+    ProcessStep first();
+    ProcessStep last();
+    int size();
+    boolean isEmpty();
+}
+```
+
+<ParamField path="steps" type="List<ProcessStep>" required>
+  Immutable list of process steps in execution order
+</ParamField>
+
+#### Methods
+
+<ParamField path="first()" type="ProcessStep">
+  Returns the first step in the schedule, or null if empty
+</ParamField>
+
+<ParamField path="last()" type="ProcessStep">
+  Returns the last step in the schedule, or null if empty
+</ParamField>
+
+<ParamField path="size()" type="int">
+  Returns the number of steps in the schedule
+</ParamField>
+
+<ParamField path="isEmpty()" type="boolean">
+  Returns true if the schedule contains no steps
+</ParamField>
+
+### ProcessStep
+
+Represents a single step in a process.
+
+```java
+package com.softwarearchetypes.graphs.scheduling;
+
+record ProcessStep(String name) {}
+```
+
+### DependencyType
+
+Enum defining types of dependencies between process steps.
+
+```java
+package com.softwarearchetypes.graphs.scheduling;
+
+enum DependencyType {
+    FINISH_TO_START,   // Most common: B starts after A finishes
+    START_TO_START,    // B starts when A starts (can run in parallel)
+    FINISH_TO_FINISH,  // B finishes when A finishes
+    START_TO_FINISH    // B finishes when A starts (rare)
+}
+```
+
+## Usage Examples
+
+### Simple Linear Process
+
+```java
+ProcessStep design = new ProcessStep("Design");
+ProcessStep implement = new ProcessStep("Implement");
+ProcessStep test = new ProcessStep("Test");
+ProcessStep deploy = new ProcessStep("Deploy");
+
+Schedule schedule = Process.builder()
+    .addStep(design)
+    .addStep(implement)
+    .addStep(test)
+    .addStep(deploy)
+    .addDependency(design, implement)      // Implement after design
+    .addDependency(implement, test)        // Test after implement
+    .addDependency(test, deploy)           // Deploy after test
+    .build();
+
+// schedule.steps() = [Design, Implement, Test, Deploy]
+```
+
+### Parallel Steps with Dependencies
+
+```java
+ProcessStep requirements = new ProcessStep("Requirements");
+ProcessStep uiDesign = new ProcessStep("UI Design");
+ProcessStep backendDesign = new ProcessStep("Backend Design");
+ProcessStep implementation = new ProcessStep("Implementation");
+
+Schedule schedule = Process.builder()
+    .addDependency(requirements, uiDesign)
+    .addDependency(requirements, backendDesign)  // UI and Backend can run in parallel
+    .addDependency(uiDesign, implementation)
+    .addDependency(backendDesign, implementation)  // Implementation needs both
+    .build();
+
+// Possible order: [Requirements, UI Design, Backend Design, Implementation]
+// Or: [Requirements, Backend Design, UI Design, Implementation]
+```
+
+### Manufacturing Process with Typed Dependencies
+
+```java
+ProcessStep prepMaterial = new ProcessStep("Prepare Material");
+ProcessStep heatTreatment = new ProcessStep("Heat Treatment");
+ProcessStep machining = new ProcessStep("Machining");
+ProcessStep qualityCheck = new ProcessStep("Quality Check");
+
+Schedule schedule = Process.builder()
+    .addDependency(prepMaterial, heatTreatment, DependencyType.FINISH_TO_START)
+    .addDependency(heatTreatment, machining, DependencyType.FINISH_TO_START)
+    .addDependency(machining, qualityCheck, DependencyType.START_TO_START)  // QC starts with machining
+    .build();
+```
+
+### Complex Process with Multiple Dependencies
+
+```java
+ProcessStep A = new ProcessStep("A");
+ProcessStep B = new ProcessStep("B");
+ProcessStep C = new ProcessStep("C");
+ProcessStep D = new ProcessStep("D");
+ProcessStep E = new ProcessStep("E");
+
+Schedule schedule = Process.builder()
+    .addStep(A)
+    .addDependency(A, B)
+    .addDependency(A, C)      // B and C depend on A
+    .addDependency(B, D)
+    .addDependency(C, D)      // D depends on both B and C
+    .addDependency(D, E)      // E is final step
+    .build();
+
+// Valid topological order: [A, B, C, D, E] or [A, C, B, D, E]
+```
+
+### Iterating Over Schedule
+
+```java
+Schedule schedule = buildSchedule();
+
+System.out.println("Execution plan:");
+for (int i = 0; i < schedule.size(); i++) {
+    ProcessStep step = schedule.steps().get(i);
+    System.out.println((i + 1) + ". " + step.name());
+}
+
+System.out.println("First step: " + schedule.first().name());
+System.out.println("Last step: " + schedule.last().name());
+```
+
+### Executing a Schedule
+
+```java
+public class ProcessExecutor {
+    public void execute(Schedule schedule) {
+        for (ProcessStep step : schedule.steps()) {
+            System.out.println("Executing: " + step.name());
+            executeStep(step);
+        }
+    }
+    
+    private void executeStep(ProcessStep step) {
+        // Implementation-specific execution logic
+    }
+}
+```
+
+### Parallel Execution with Concurrency Module
+
+The scheduling module integrates with the concurrency module for parallel execution:
+
+```java
+import com.softwarearchetypes.graphs.scheduling.concurrency.Concurrency;
+
+public class ParallelExecutor {
+    private final Concurrency concurrency;
+    private final Process process;
+    
+    public void executeInParallel() {
+        // Concurrency module analyzes dependencies and executes
+        // steps in parallel where dependencies allow
+        concurrency.execute(process);
+    }
+}
+```
+
+## Algorithm Details
+
+### Topological Sort
+
+**Algorithm:** Kahn's algorithm via JGraphT TopologicalOrderIterator
+
+**Complexity:**
+- Time: O(V + E) where V = steps, E = dependencies
+- Space: O(V)
+
+**Properties:**
+- Produces a valid execution order respecting all dependencies
+- Multiple valid orderings may exist
+- Returns one valid ordering (not all possible orderings)
+
+**Guarantees:**
+- If A depends on B, then B appears before A in schedule
+- All steps with no dependencies can be executed first
+- Parallel execution possible for steps with no dependency path between them
+
+### Cycle Detection
+
+The underlying DirectedAcyclicGraph enforces acyclicity:
+
+```java
+try {
+    Schedule schedule = Process.builder()
+        .addDependency(stepA, stepB)
+        .addDependency(stepB, stepC)
+        .addDependency(stepC, stepA)  // Cycle!
+        .build();
+} catch (IllegalArgumentException e) {
+    // Cycle detected during graph construction
+}
+```
+
+## Integration with Concurrency
+
+The `scheduling.concurrency` subpackage provides parallel execution:
+
+```java
+package com.softwarearchetypes.graphs.scheduling.concurrency;
+
+class Concurrency {
+    // Analyzes schedule and executes steps in parallel
+    // where dependencies allow
+}
+
+class ExecutionEnvironments {
+    // Manages thread pools and execution contexts
+}
+```
+
+See concurrency module documentation for details on parallel execution strategies.
+
+## Design Patterns
+
+### Builder Pattern
+
+Process construction uses fluent builder for readability:
+
+```java
+Process.builder()
+    .addStep(step1)
+    .addStep(step2)
+    .addDependency(step1, step2)
+    .build();
+```
+
+### Immutable Records
+
+Both Process and Schedule are immutable records ensuring thread safety and preventing accidental modification.
+
+### Graph Transformation
+
+Process building transforms declarative dependencies into executable schedule:
+
+```
+Dependency Declarations → DAG → Topological Sort → Linear Schedule
+```
+
+## Related Types
+
+- **ProcessStep**: Individual step in a process
+- **DependencyType**: Type of dependency relationship
+- **Schedule**: Ordered execution plan
+- **Concurrency**: Parallel execution engine
+- **ExecutionEnvironments**: Thread pool management
+
+## Best Practices
+
+### Naming Steps
+
+Use clear, action-oriented names:
+
+```java
+// Good
+new ProcessStep("Load Configuration")
+new ProcessStep("Validate Inputs")
+new ProcessStep("Execute Transform")
+
+// Avoid
+new ProcessStep("Step 1")
+new ProcessStep("Do Stuff")
+```
+
+### Dependency Granularity
+
+Break down large steps into smaller ones for better parallelization:
+
+```java
+// Better - allows parallel processing of A and B
+Process.builder()
+    .addDependency(init, processA)
+    .addDependency(init, processB)
+    .addDependency(processA, finalize)
+    .addDependency(processB, finalize)
+    .build();
+
+// Worse - forces sequential execution
+Process.builder()
+    .addDependency(init, processAB)  // Combines A and B
+    .addDependency(processAB, finalize)
+    .build();
+```
+
+### Error Handling
+
+Plan for step failures:
+
+```java
+public void executeWithRetry(Schedule schedule) {
+    for (ProcessStep step : schedule.steps()) {
+        try {
+            executeStep(step);
+        } catch (Exception e) {
+            handleStepFailure(step, e);
+            // Decide: retry, skip, or abort
+        }
+    }
+}
+```
+
+## References
+
+- Source: `/workspace/source/graphs/src/main/java/com/softwarearchetypes/graphs/scheduling/`
+- Process: `Process.java:10-67`
+- Schedule: `Schedule.java:5-25`
+- Concurrency: `scheduling/concurrency/` package

@@ -1,0 +1,400 @@
+---
+title: "Addresses"
+description: "Manages multiple addresses for a party with validation and event tracking"
+---
+
+## Overview
+
+`Addresses` is an aggregate that manages all addresses for a specific party. It handles address definition, updates, and removal while enforcing policies and tracking events.
+
+**Package:** `com.softwarearchetypes.party`
+
+**Source:** `/party/src/main/java/com/softwarearchetypes/party/Addresses.java:20`
+
+## Key Features
+
+- Enforces address defining policies
+- Tracks events for all address operations
+- Supports multiple address types (GeoAddress, EmailAddress, PhoneAddress, WebAddress)
+- Handles idempotent operations (skips duplicate additions/updates)
+- Version control for optimistic locking
+
+## Factory Methods
+
+### emptyAddressesFor
+
+```java
+static Addresses emptyAddressesFor(PartyId partyId)
+```
+
+Creates an empty Addresses collection with default policy.
+
+<ParamField path="partyId" type="PartyId" required>
+  The party identifier
+</ParamField>
+
+<ResponseField name="return" type="Addresses">
+  Empty Addresses with default policy
+</ResponseField>
+
+```java
+static Addresses emptyAddressesFor(PartyId partyId, AddressDefiningPolicy policy)
+```
+
+Creates an empty Addresses collection with custom policy.
+
+<ParamField path="partyId" type="PartyId" required>
+  The party identifier
+</ParamField>
+
+<ParamField path="policy" type="AddressDefiningPolicy" required>
+  Custom address defining policy
+</ParamField>
+
+<ResponseField name="return" type="Addresses">
+  Empty Addresses with custom policy
+</ResponseField>
+
+**Example:**
+```java
+Addresses addresses = Addresses.emptyAddressesFor(partyId);
+
+// With custom policy
+Addresses restrictedAddresses = Addresses.emptyAddressesFor(
+    partyId,
+    AddressDefiningPolicy.maxOfType(AddressType.EMAIL, 1)
+);
+```
+
+## Accessor Methods
+
+### partyId
+
+```java
+PartyId partyId()
+```
+
+Returns the party identifier.
+
+<ResponseField name="return" type="PartyId">
+  The party ID
+</ResponseField>
+
+### version
+
+```java
+Version version()
+```
+
+Returns the current version for optimistic locking.
+
+<ResponseField name="return" type="Version">
+  The version
+</ResponseField>
+
+### events
+
+```java
+List<AddressRelatedEvent> events()
+```
+
+Returns all address-related events.
+
+<ResponseField name="return" type="List<AddressRelatedEvent>">
+  Immutable list of events
+</ResponseField>
+
+### asSet
+
+```java
+Set<Address> asSet()
+```
+
+Returns all addresses as a set.
+
+<ResponseField name="return" type="Set<Address>">
+  Set of all addresses
+</ResponseField>
+
+### publishedEvents
+
+```java
+List<PublishedEvent> publishedEvents()
+```
+
+Returns only events marked for publishing.
+
+<ResponseField name="return" type="List<PublishedEvent>">
+  List of published events
+</ResponseField>
+
+## Operations
+
+### addOrUpdate
+
+```java
+Result<String, Addresses> addOrUpdate(Address address)
+```
+
+Adds a new address or updates an existing one. The operation:
+- Checks if address already exists (by ID)
+- If exists: updates with new data if different
+- If new: checks policy and adds if allowed
+- Records appropriate event
+
+<ParamField path="address" type="Address" required>
+  The address to add or update
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Addresses>">
+  Success with Addresses, or failure with "POLICY_NOT_MET" or "NOT_MATCHING_ADDRESS_TYPE"
+</ResponseField>
+
+**Example:**
+```java
+GeoAddress homeAddress = GeoAddress.builder()
+    .id(AddressId.random())
+    .partyId(partyId)
+    .street("123 Main St")
+    .city("Springfield")
+    .country("USA")
+    .useType(AddressUseType.HOME)
+    .build();
+
+Result<String, Addresses> result = addresses.addOrUpdate(homeAddress);
+
+if (result.success()) {
+    addresses = result.getSuccess();
+    // Check event
+    List<AddressRelatedEvent> events = addresses.events();
+    // Will contain GeoAddressDefined event
+} else {
+    // Handle failure (policy not met)
+    System.out.println("Failed: " + result.getFailure());
+}
+```
+
+**Update behavior:**
+```java
+// First add
+addresses.addOrUpdate(emailAddress1);
+// Event: EmailAddressDefined
+
+// Update with different data
+EmailAddress updated = emailAddress1.withEmail("newemail@example.com");
+addresses.addOrUpdate(updated);
+// Event: EmailAddressUpdated
+
+// Update with same data (idempotent)
+addresses.addOrUpdate(updated);
+// Event: AddressUpdateSkipped (no changes detected)
+```
+
+### removeAddressWith
+
+```java
+Result<String, Addresses> removeAddressWith(AddressId addressId)
+```
+
+Removes an address by ID. The operation is idempotent - removing a non-existent address succeeds but records a skip event.
+
+<ParamField path="addressId" type="AddressId" required>
+  The address identifier to remove
+</ParamField>
+
+<ResponseField name="return" type="Result<String, Addresses>">
+  Always succeeds with updated Addresses
+</ResponseField>
+
+**Example:**
+```java
+Result<String, Addresses> result = addresses.removeAddressWith(addressId);
+
+addresses = result.getSuccess();
+List<AddressRelatedEvent> events = addresses.events();
+// Last event is either:
+// - EmailAddressRemoved (if existed)
+// - AddressRemovalSkipped (if didn't exist)
+```
+
+## Events
+
+The Addresses aggregate generates the following events:
+
+### Definition Events
+
+- `GeoAddressDefined`: Geographic address added
+- `EmailAddressDefined`: Email address added
+- `PhoneAddressDefined`: Phone address added
+- `WebAddressDefined`: Web address added
+
+### Update Events
+
+- `GeoAddressUpdated`: Geographic address modified
+- `EmailAddressUpdated`: Email address modified
+- `PhoneAddressUpdated`: Phone address modified
+- `WebAddressUpdated`: Web address modified
+- `AddressUpdateSkipped`: Update had no changes
+
+### Removal Events
+
+- `GeoAddressRemoved`: Geographic address removed
+- `EmailAddressRemoved`: Email address removed
+- `PhoneAddressRemoved`: Phone address removed
+- `WebAddressRemoved`: Web address removed
+- `AddressRemovalSkipped`: Address didn't exist
+
+## Address Types
+
+The Addresses collection supports multiple address types:
+
+### GeoAddress
+
+Physical geographic addresses with street, city, postal code, country.
+
+```java
+GeoAddress address = GeoAddress.builder()
+    .partyId(partyId)
+    .street("123 Main St")
+    .city("Springfield")
+    .postalCode("12345")
+    .country("USA")
+    .useType(AddressUseType.HOME)
+    .build();
+```
+
+### EmailAddress
+
+Email addresses.
+
+```java
+EmailAddress email = EmailAddress.builder()
+    .partyId(partyId)
+    .email("user@example.com")
+    .useType(AddressUseType.WORK)
+    .build();
+```
+
+### PhoneAddress
+
+Phone numbers with country code and extension.
+
+```java
+PhoneAddress phone = PhoneAddress.builder()
+    .partyId(partyId)
+    .countryCode("+1")
+    .number("555-1234")
+    .useType(AddressUseType.MOBILE)
+    .build();
+```
+
+### WebAddress
+
+Web URLs.
+
+```java
+WebAddress web = WebAddress.builder()
+    .partyId(partyId)
+    .url("https://example.com")
+    .useType(AddressUseType.WEBSITE)
+    .build();
+```
+
+## Address Defining Policies
+
+Policies control what addresses can be added:
+
+**Default Policy:**
+```java
+AddressDefiningPolicy.DEFAULT
+// Allows all addresses
+```
+
+**Custom Policies:**
+```java
+// Limit number of addresses per type
+AddressDefiningPolicy.maxOfType(AddressType.EMAIL, 3);
+
+// Require verification for certain types
+AddressDefiningPolicy.requireVerified(AddressType.EMAIL);
+
+// Combine policies
+AddressDefiningPolicy.builder()
+    .maxOfType(AddressType.EMAIL, 3)
+    .maxOfType(AddressType.PHONE, 2)
+    .requireVerified(AddressType.EMAIL)
+    .build();
+```
+
+## Complete Usage Example
+
+```java
+// Create addresses for a party
+Addresses addresses = Addresses.emptyAddressesFor(partyId);
+
+// Add home address
+GeoAddress home = GeoAddress.builder()
+    .id(AddressId.random())
+    .partyId(partyId)
+    .street("123 Main St")
+    .city("Springfield")
+    .postalCode("12345")
+    .country("USA")
+    .useType(AddressUseType.HOME)
+    .build();
+
+Result<String, Addresses> result1 = addresses.addOrUpdate(home);
+assert result1.success();
+addresses = result1.getSuccess();
+
+// Add email
+EmailAddress email = EmailAddress.builder()
+    .id(AddressId.random())
+    .partyId(partyId)
+    .email("user@example.com")
+    .useType(AddressUseType.WORK)
+    .build();
+
+Result<String, Addresses> result2 = addresses.addOrUpdate(email);
+assert result2.success();
+addresses = result2.getSuccess();
+
+// Update email
+EmailAddress updatedEmail = email.withEmail("newemail@example.com");
+Result<String, Addresses> result3 = addresses.addOrUpdate(updatedEmail);
+assert result3.success();
+addresses = result3.getSuccess();
+
+// Remove home address
+Result<String, Addresses> result4 = addresses.removeAddressWith(home.id());
+assert result4.success();
+addresses = result4.getSuccess();
+
+// Check final state
+Set<Address> allAddresses = addresses.asSet();
+assert allAddresses.size() == 1; // Only email remains
+
+// Review events
+List<AddressRelatedEvent> events = addresses.events();
+// Events:
+// 1. GeoAddressDefined
+// 2. EmailAddressDefined
+// 3. EmailAddressUpdated
+// 4. GeoAddressRemoved
+```
+
+## Version Control
+
+Addresses uses version control for optimistic locking:
+
+```java
+Addresses addresses = Addresses.emptyAddressesFor(partyId);
+Version v1 = addresses.version(); // Version.initial()
+
+addresses = addresses.addOrUpdate(address).getSuccess();
+Version v2 = addresses.version(); // Version incremented
+
+assert v2.isAfter(v1);
+```
+
+This prevents concurrent modification conflicts in multi-user scenarios.

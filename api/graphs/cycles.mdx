@@ -1,0 +1,414 @@
+---
+title: Cycle Detection
+description: Graph-based cycle detection for resolving circular reservation dependencies
+---
+
+## Overview
+
+The cycles module provides graph algorithms to detect and resolve circular dependencies in reservation change requests. It's particularly useful for scenarios where users want to swap slots in a circular fashion (e.g., A→B, B→C, C→A).
+
+## Key Components
+
+### BatchReservationUseCase
+
+Use case for executing batch reservation changes that may contain circular dependencies.
+
+```java
+package com.softwarearchetypes.graphs.cycles;
+
+class BatchReservationUseCase {
+    private final SlotRepository slotRepository;
+    
+    BatchReservationUseCase(SlotRepository slotRepository);
+    
+    BatchReservationResult execute(List<ReservationChangeRequest> requests);
+    BatchReservationResult execute(List<ReservationChangeRequest> requests, 
+                                   Eligibility eligibility);
+}
+```
+
+#### Constructor
+
+<ParamField path="slotRepository" type="SlotRepository" required>
+  Repository for loading and saving slot reservations
+</ParamField>
+
+#### execute Method
+
+Executes reservation changes, detecting and resolving cycles in slot dependencies.
+
+```java
+BatchReservationResult execute(List<ReservationChangeRequest> requests)
+```
+
+<ParamField path="requests" type="List<ReservationChangeRequest>" required>
+  List of reservation change requests, each specifying fromSlot → toSlot transition
+</ParamField>
+
+<ResponseField name="return" type="BatchReservationResult">
+  Result containing:
+  - Success status
+  - Set of requests that were part of a detected cycle and executed together
+  - Empty result if no cycle detected
+</ResponseField>
+
+**Algorithm:**
+1. Build directed graph: SlotId → SlotId based on fromSlot → toSlot
+2. Detect first cycle using depth-first search
+3. If cycle found:
+   - Load all affected slots
+   - Release all fromSlots (breaking the cycle)
+   - Assign all toSlots to new owners
+   - Save all modified slots
+4. Return result with executed requests
+
+**Example:**
+```java
+List<ReservationChangeRequest> requests = List.of(
+    new ReservationChangeRequest(userA, slotA, slotB),  // A wants to move to B
+    new ReservationChangeRequest(userB, slotB, slotC),  // B wants to move to C
+    new ReservationChangeRequest(userC, slotC, slotA)   // C wants to move to A (cycle!)
+);
+
+BatchReservationResult result = useCase.execute(requests);
+// All three requests executed atomically
+```
+
+#### execute with Eligibility
+
+Executes reservation changes with eligibility constraints.
+
+```java
+BatchReservationResult execute(
+    List<ReservationChangeRequest> requests,
+    Eligibility eligibility
+)
+```
+
+<ParamField path="requests" type="List<ReservationChangeRequest>" required>
+  List of reservation change requests
+</ParamField>
+
+<ParamField path="eligibility" type="Eligibility" required>
+  Eligibility rules defining which owner-to-owner transitions are allowed
+</ParamField>
+
+<ResponseField name="return" type="BatchReservationResult">
+  Result containing successfully executed requests that satisfy eligibility constraints
+</ResponseField>
+
+**Algorithm:**
+1. Build owner graph: OwnerId → OwnerId (from current slot owners)
+2. Compute intersection with eligibility graph
+3. Find cycles in intersection graph
+4. Execute cycle if found (same as basic execute)
+
+**Use Case:**
+Ensures only eligible users can participate in swaps. For example, only allowing swaps within the same department or skill level.
+
+### Graph Generic Type
+
+Generic directed graph with cycle detection.
+
+```java
+package com.softwarearchetypes.graphs.cycles.math;
+
+public class Graph<T, P> {
+    private final Map<Node<T>, List<Edge<T, P>>> adjacencyMatrix;
+    
+    public Graph<T, P> addEdge(Edge<T, P> edge);
+    public Optional<Path<T, P>> findFirstCycle();
+    public boolean hasEdge(Node<T> from, Node<T> to);
+    public <P2> Graph<T, P> intersection(Graph<T, P2> other);
+    public void removeEdge(Edge<T, P> edge);
+}
+```
+
+#### Type Parameters
+
+<ParamField path="T" type="type parameter">
+  Type of node values (e.g., SlotId, OwnerId)
+</ParamField>
+
+<ParamField path="P" type="type parameter">
+  Type of edge properties (e.g., ReservationChangeRequest)
+</ParamField>
+
+#### addEdge()
+
+Adds a directed edge to the graph.
+
+```java
+public Graph<T, P> addEdge(Edge<T, P> edge)
+```
+
+<ParamField path="edge" type="Edge<T, P>" required>
+  Edge containing from node, to node, and optional property
+</ParamField>
+
+<ResponseField name="return" type="Graph<T, P>">
+  The graph instance (for fluent chaining)
+</ResponseField>
+
+#### findFirstCycle()
+
+Detects the first cycle in the graph using depth-first search.
+
+```java
+public Optional<Path<T, P>> findFirstCycle()
+```
+
+<ResponseField name="return" type="Optional<Path<T, P>>">
+  Path representing the cycle (list of edges), or empty if no cycle exists
+</ResponseField>
+
+**Algorithm:**
+- Depth-first search with recursion stack tracking
+- Detects back edges indicating cycles
+- Returns first discovered cycle
+
+**Example:**
+```java
+Graph<SlotId, ReservationChangeRequest> graph = new Graph<>();
+
+graph.addEdge(new Edge<>(nodeA, nodeB, requestAB))
+     .addEdge(new Edge<>(nodeB, nodeC, requestBC))
+     .addEdge(new Edge<>(nodeC, nodeA, requestCA));  // Completes cycle
+
+Optional<Path<SlotId, ReservationChangeRequest>> cycle = graph.findFirstCycle();
+// cycle.isPresent() == true
+// cycle.get().edges() contains [A→B, B→C, C→A]
+```
+
+#### intersection()
+
+Computes the intersection of two graphs (edges present in both).
+
+```java
+public <P2> Graph<T, P> intersection(Graph<T, P2> other)
+```
+
+<ParamField path="other" type="Graph<T, P2>" required>
+  Another graph with same node type but possibly different edge property type
+</ParamField>
+
+<ResponseField name="return" type="Graph<T, P>">
+  New graph containing only edges whose from→to exists in both graphs (keeps this graph's properties)
+</ResponseField>
+
+**Use Case:**
+Filtering reservation changes by eligibility:
+```java
+Graph<OwnerId, ReservationChangeRequest> requestGraph = buildOwnerGraph(requests);
+Graph<OwnerId, Void> eligibilityGraph = eligibility.asGraph();
+
+Graph<OwnerId, ReservationChangeRequest> eligible = 
+    requestGraph.intersection(eligibilityGraph);
+// Only contains transitions allowed by eligibility rules
+```
+
+### Edge Type
+
+Represents a directed edge in a graph.
+
+```java
+package com.softwarearchetypes.graphs.cycles.math;
+
+public record Edge<T, P>(Node<T> from, Node<T> to, P property) {
+    Edge(Node<T> from, Node<T> to);  // Constructor without property
+}
+```
+
+<ParamField path="from" type="Node<T>" required>
+  Source node
+</ParamField>
+
+<ParamField path="to" type="Node<T>" required>
+  Target node
+</ParamField>
+
+<ParamField path="property" type="P">
+  Optional edge property (can be null for simple edges)
+</ParamField>
+
+### Node Type
+
+Wrapper for node values in a graph.
+
+```java
+package com.softwarearchetypes.graphs.cycles.math;
+
+public record Node<T>(T value) {}
+```
+
+### Path Type
+
+Represents a path through a graph (sequence of edges).
+
+```java
+package com.softwarearchetypes.graphs.cycles.math;
+
+public record Path<T, P>(List<Edge<T, P>> edges) {
+    public List<Edge<T, P>> edges();  // Returns immutable list
+}
+```
+
+### Slot
+
+Represents a reservable resource with an owner.
+
+```java
+package com.softwarearchetypes.graphs.cycles;
+
+class Slot {
+    private final SlotId slotId;
+    private OwnerId owner;
+    
+    static Slot create(SlotId slotId, OwnerId owner);
+    
+    void release();
+    void assignTo(OwnerId newOwner);
+    OwnerId getOwner();
+    SlotId id();
+}
+```
+
+#### Methods
+
+<ParamField path="create()" type="static Slot">
+  Factory method to create a slot
+  
+  **Parameters:**
+  - slotId (SlotId): Unique slot identifier
+  - owner (OwnerId): Initial owner
+</ParamField>
+
+<ParamField path="release()" type="void">
+  Releases the slot (sets owner to empty)
+</ParamField>
+
+<ParamField path="assignTo()" type="void">
+  Assigns slot to a new owner
+  
+  **Parameters:**
+  - newOwner (OwnerId): New owner for the slot
+</ParamField>
+
+<ParamField path="getOwner()" type="OwnerId">
+  Returns current owner of the slot
+</ParamField>
+
+## Usage Examples
+
+### Simple Cycle Resolution
+
+```java
+SlotRepository repository = new InMemorySlotRepository();
+BatchReservationUseCase useCase = new BatchReservationUseCase(repository);
+
+// Three users want to swap in a circle
+List<ReservationChangeRequest> requests = List.of(
+    new ReservationChangeRequest(alice, slotA, slotB),
+    new ReservationChangeRequest(bob, slotB, slotC),
+    new ReservationChangeRequest(charlie, slotC, slotA)
+);
+
+BatchReservationResult result = useCase.execute(requests);
+
+if (result.isSuccess()) {
+    System.out.println("Cycle resolved! Executed " + 
+        result.executedRequests().size() + " swaps");
+}
+```
+
+### With Eligibility Constraints
+
+```java
+// Define who can swap with whom
+Eligibility eligibility = Eligibility.builder()
+    .allowTransition(alice, bob)      // Alice can take Bob's slots
+    .allowTransition(bob, charlie)    // Bob can take Charlie's slots
+    .allowTransition(charlie, alice)  // Charlie can take Alice's slots
+    .build();
+
+BatchReservationResult result = useCase.execute(requests, eligibility);
+```
+
+### Manual Graph Construction
+
+```java
+Graph<String, String> graph = new Graph<>();
+
+graph.addEdge(new Edge<>(new Node<>("A"), new Node<>("B"), "A to B"))
+     .addEdge(new Edge<>(new Node<>("B"), new Node<>("C"), "B to C"))
+     .addEdge(new Edge<>(new Node<>("C"), new Node<>("A"), "C to A"));
+
+Optional<Path<String, String>> cycle = graph.findFirstCycle();
+
+if (cycle.isPresent()) {
+    cycle.get().edges().forEach(edge ->
+        System.out.println(edge.from().value() + " → " + edge.to().value())
+    );
+}
+```
+
+### Graph Intersection for Filtering
+
+```java
+// Request graph: who wants to move where
+Graph<UserId, Request> requests = buildRequestGraph();
+
+// Permission graph: who is allowed to move where
+Graph<UserId, Void> permissions = buildPermissionGraph();
+
+// Only keep requests that are allowed
+Graph<UserId, Request> allowedRequests = requests.intersection(permissions);
+
+Optional<Path<UserId, Request>> cycle = allowedRequests.findFirstCycle();
+```
+
+## Algorithm Complexity
+
+### findFirstCycle()
+- **Time Complexity**: O(V + E) where V = vertices, E = edges
+- **Space Complexity**: O(V) for visited and stack sets
+- **Algorithm**: Depth-first search with back edge detection
+
+### intersection()
+- **Time Complexity**: O(E1 * E2) in worst case
+- **Space Complexity**: O(E) for result graph
+
+## Design Patterns
+
+### Two-Phase Commit Pattern
+
+The cycle resolution follows a two-phase approach:
+
+1. **Release Phase**: Release all source slots
+2. **Assign Phase**: Assign all target slots
+
+This ensures the cycle is broken atomically without deadlocks.
+
+### Graph Transformation
+
+The use case transforms request data through multiple graph representations:
+
+```
+Requests → Slot Graph → Cycle Detection → Execution
+        → Owner Graph → Eligibility Filter → Cycle Detection
+```
+
+## Related Types
+
+- **SlotId**: Value object identifying slots
+- **OwnerId**: Value object identifying slot owners
+- **ReservationChangeRequest**: Request to move from one slot to another
+- **BatchReservationResult**: Result of batch execution
+- **Eligibility**: Defines allowed owner-to-owner transitions
+- **SlotRepository**: Persistence for slots
+
+## References
+
+- Source: `/workspace/source/graphs/src/main/java/com/softwarearchetypes/graphs/cycles/`
+- Graph implementation: `BatchReservationUseCase.java:13-123`
+- Cycle detection: `Graph.java:17-63`

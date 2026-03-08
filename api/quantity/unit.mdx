@@ -1,0 +1,470 @@
+---
+title: Unit
+description: A value object representing a unit of measurement
+---
+
+## Overview
+
+`Unit` is a record class that represents a unit of measurement with a symbol and a name. It provides predefined factory methods for common units and allows creation of custom units.
+
+**Package:** `com.softwarearchetypes.quantity`
+
+**Examples:** kg (kilograms), l (liters), pcs (pieces), m² (square meters)
+
+## Constructor
+
+<ParamField body="symbol" type="String" required>
+  The short symbol for the unit (e.g., "kg", "l", "pcs"). Cannot be null or blank.
+</ParamField>
+
+<ParamField body="name" type="String" required>
+  The full name of the unit (e.g., "kilograms", "liters", "pieces"). Cannot be null or blank.
+</ParamField>
+
+### Validation Rules
+
+- Symbol cannot be null or blank (whitespace-only)
+- Name cannot be null or blank (whitespace-only)
+- Both symbol and name are required
+
+## Factory Methods
+
+### of(String, String)
+
+Creates a custom Unit with specified symbol and name.
+
+<ParamField path="symbol" type="String" required>
+  The unit symbol
+</ParamField>
+
+<ParamField path="name" type="String" required>
+  The unit name
+</ParamField>
+
+<ResponseField name="return" type="Unit">
+  A new Unit instance
+</ResponseField>
+
+```java
+Unit widget = Unit.of("widget", "widgets");
+Unit celsius = Unit.of("℃", "degrees Celsius");
+Unit ohm = Unit.of("Ω", "ohm");
+```
+
+### Predefined Units
+
+The following factory methods create commonly used units:
+
+#### pieces()
+
+Creates a unit for counting pieces or items.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="pcs", name="pieces")
+</ResponseField>
+
+```java
+Unit unit = Unit.pieces();
+// Symbol: "pcs"
+// Name: "pieces"
+```
+
+#### kilograms()
+
+Creates a unit for mass in kilograms.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="kg", name="kilograms")
+</ResponseField>
+
+```java
+Unit unit = Unit.kilograms();
+// Symbol: "kg"
+// Name: "kilograms"
+```
+
+#### liters()
+
+Creates a unit for volume in liters.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="l", name="liters")
+</ResponseField>
+
+```java
+Unit unit = Unit.liters();
+// Symbol: "l"
+// Name: "liters"
+```
+
+#### meters()
+
+Creates a unit for length in meters.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="m", name="meters")
+</ResponseField>
+
+```java
+Unit unit = Unit.meters();
+// Symbol: "m"
+// Name: "meters"
+```
+
+#### squareMeters()
+
+Creates a unit for area in square meters.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="m²", name="square meters")
+</ResponseField>
+
+```java
+Unit unit = Unit.squareMeters();
+// Symbol: "m²"
+// Name: "square meters"
+```
+
+#### cubicMeters()
+
+Creates a unit for volume in cubic meters.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="m³", name="cubic meters")
+</ResponseField>
+
+```java
+Unit unit = Unit.cubicMeters();
+// Symbol: "m³"
+// Name: "cubic meters"
+```
+
+#### hours()
+
+Creates a unit for time in hours.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="h", name="hours")
+</ResponseField>
+
+```java
+Unit unit = Unit.hours();
+// Symbol: "h"
+// Name: "hours"
+```
+
+#### minutes()
+
+Creates a unit for time in minutes.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="min", name="minutes")
+</ResponseField>
+
+```java
+Unit unit = Unit.minutes();
+// Symbol: "min"
+// Name: "minutes"
+```
+
+#### packages()
+
+Creates a unit for counting packages.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="pkg", name="packages")
+</ResponseField>
+
+```java
+Unit unit = Unit.packages();
+// Symbol: "pkg"
+// Name: "packages"
+```
+
+#### accounts()
+
+Creates a unit for counting accounts.
+
+<ResponseField name="return" type="Unit">
+  Unit(symbol="acc", name="accounts")
+</ResponseField>
+
+```java
+Unit unit = Unit.accounts();
+// Symbol: "acc"
+// Name: "accounts"
+```
+
+## Instance Methods
+
+### symbol()
+
+Returns the unit's symbol.
+
+<ResponseField name="return" type="String">
+  The unit symbol
+</ResponseField>
+
+```java
+Unit unit = Unit.kilograms();
+String symbol = unit.symbol();
+// Result: "kg"
+```
+
+### name()
+
+Returns the unit's full name.
+
+<ResponseField name="return" type="String">
+  The unit name
+</ResponseField>
+
+```java
+Unit unit = Unit.kilograms();
+String name = unit.name();
+// Result: "kilograms"
+```
+
+### toString()
+
+Returns the symbol as the string representation.
+
+<ResponseField name="return" type="String">
+  The unit symbol
+</ResponseField>
+
+```java
+Unit unit = Unit.kilograms();
+String str = unit.toString();
+// Result: "kg"
+
+Unit sqm = Unit.squareMeters();
+String str2 = sqm.toString();
+// Result: "m²"
+```
+
+## Equality and Hashing
+
+Units are equal if both their symbol and name are equal:
+
+```java
+Unit first = Unit.of("kg", "kilograms");
+Unit second = Unit.of("kg", "kilograms");
+Unit different = Unit.of("g", "grams");
+
+first.equals(second);     // true
+first.equals(different);  // false
+
+first.hashCode() == second.hashCode();  // true
+
+// Units with same symbol but different names are NOT equal
+Unit meters1 = Unit.of("m", "meters");
+Unit meters2 = Unit.of("m", "miles");
+meters1.equals(meters2);  // false
+```
+
+## Working with Predefined Units
+
+### Mass Units
+
+```java
+Quantity weight = Quantity.of(50.5, Unit.kilograms());
+// Result: 50.5 kg
+```
+
+### Volume Units
+
+```java
+Quantity fuel = Quantity.of(45.5, Unit.liters());
+// Result: 45.5 l
+
+Quantity storage = Quantity.of(2.5, Unit.cubicMeters());
+// Result: 2.5 m³
+```
+
+### Length and Area Units
+
+```java
+Quantity distance = Quantity.of(100, Unit.meters());
+// Result: 100 m
+
+Quantity area = Quantity.of(25.5, Unit.squareMeters());
+// Result: 25.5 m²
+```
+
+### Time Units
+
+```java
+Quantity duration = Quantity.of(8, Unit.hours());
+// Result: 8 h
+
+Quantity interval = Quantity.of(30, Unit.minutes());
+// Result: 30 min
+```
+
+### Counting Units
+
+```java
+Quantity items = Quantity.of(1000, Unit.pieces());
+// Result: 1000 pcs
+
+Quantity shipments = Quantity.of(50, Unit.packages());
+// Result: 50 pkg
+
+Quantity users = Quantity.of(150, Unit.accounts());
+// Result: 150 acc
+```
+
+## Creating Custom Units
+
+### Simple Custom Units
+
+```java
+Unit widget = Unit.of("widget", "widgets");
+Quantity inventory = Quantity.of(42, widget);
+// Result: 42 widget
+```
+
+### Unicode Symbols
+
+```java
+// Temperature
+Unit celsius = Unit.of("℃", "degrees Celsius");
+Unit fahrenheit = Unit.of("℉", "degrees Fahrenheit");
+
+// Electrical
+Unit ohm = Unit.of("Ω", "ohm");
+Unit microfarad = Unit.of("μF", "microfarad");
+
+// Currency (though use Money class for monetary amounts)
+Unit euro = Unit.of("€", "euro");
+Unit dollar = Unit.of("$", "dollar");
+```
+
+### Domain-Specific Units
+
+```java
+// Manufacturing
+Unit batch = Unit.of("batch", "batches");
+Unit pallet = Unit.of("plt", "pallets");
+Unit container = Unit.of("ctr", "containers");
+
+// Software
+Unit request = Unit.of("req", "requests");
+Unit user = Unit.of("usr", "users");
+Unit license = Unit.of("lic", "licenses");
+
+// Retail
+Unit box = Unit.of("box", "boxes");
+Unit carton = Unit.of("ctn", "cartons");
+Unit dozen = Unit.of("doz", "dozen");
+```
+
+## Usage with Quantity
+
+Units are typically used with the [Quantity](/api/quantity/quantity) class:
+
+```java
+// Create quantities with predefined units
+Quantity weight = Quantity.of(100, Unit.kilograms());
+Quantity volume = Quantity.of(500, Unit.liters());
+Quantity count = Quantity.of(1000, Unit.pieces());
+
+// Create quantities with custom units
+Unit widget = Unit.of("widget", "widgets");
+Quantity widgets = Quantity.of(42, widget);
+
+// Operations preserve units
+Quantity more = weight.add(Quantity.of(50, Unit.kilograms()));
+// Result: 150 kg
+```
+
+## Immutability
+
+Unit is immutable - all fields are final and cannot be changed after construction:
+
+```java
+Unit unit = Unit.kilograms();
+// unit.symbol() will always return "kg"
+// unit.name() will always return "kilograms"
+// No methods to modify the unit
+```
+
+## Common Patterns
+
+### Unit Constants
+
+Define unit constants for your domain:
+
+```java
+public class ProductUnits {
+    public static final Unit BOXES = Unit.of("box", "boxes");
+    public static final Unit PALLETS = Unit.of("plt", "pallets");
+    public static final Unit CONTAINERS = Unit.of("ctr", "containers");
+}
+
+// Usage
+Quantity shipment = Quantity.of(20, ProductUnits.PALLETS);
+```
+
+### Unit Validation
+
+```java
+public class InventoryItem {
+    private static final Set<Unit> ALLOWED_UNITS = Set.of(
+        Unit.pieces(),
+        Unit.kilograms(),
+        Unit.liters(),
+        Unit.packages()
+    );
+    
+    public void setQuantity(Quantity quantity) {
+        if (!ALLOWED_UNITS.contains(quantity.unit())) {
+            throw new IllegalArgumentException(
+                "Invalid unit: " + quantity.unit()
+            );
+        }
+        // ...
+    }
+}
+```
+
+### Unit Conversion (Not Built-in)
+
+<Note>
+  The Unit class does NOT provide automatic unit conversion. If you need to convert between units (e.g., kilograms to grams), you must implement this logic yourself or use a dedicated library.
+</Note>
+
+```java
+// Manual conversion example
+public Quantity convertKgToGrams(Quantity kg) {
+    if (!kg.unit().equals(Unit.kilograms())) {
+        throw new IllegalArgumentException("Expected kilograms");
+    }
+    
+    Unit grams = Unit.of("g", "grams");
+    BigDecimal gramsAmount = kg.amount().multiply(new BigDecimal("1000"));
+    return Quantity.of(gramsAmount, grams);
+}
+```
+
+## Validation Examples
+
+```java
+// Valid units
+Unit valid1 = Unit.of("kg", "kilograms");  // ✓
+Unit valid2 = Unit.of("m²", "square meters");  // ✓
+Unit valid3 = Unit.of("℃", "degrees Celsius");  // ✓
+
+// Invalid units (will throw IllegalArgumentException)
+Unit invalid1 = Unit.of(null, "kilograms");  // ✗ symbol is null
+Unit invalid2 = Unit.of("kg", null);  // ✗ name is null
+Unit invalid3 = Unit.of("", "kilograms");  // ✗ symbol is empty
+Unit invalid4 = Unit.of("   ", "kilograms");  // ✗ symbol is blank
+Unit invalid5 = Unit.of("kg", "");  // ✗ name is empty
+```
+
+## Related Types
+
+- [Quantity](/api/quantity/quantity) - Amounts with units
+- [Money](/api/quantity/money) - Monetary amounts with currency

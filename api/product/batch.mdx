@@ -1,0 +1,467 @@
+---
+title: "Batch"
+description: "Groups of product instances tracked together for quality control"
+---
+
+## Overview
+
+`Batch` describes a set of ProductInstances of a specific ProductType that are tracked together, usually for quality control purposes.
+
+**Package:** `com.softwarearchetypes.product`
+
+**Source:** `/product/src/main/java/com/softwarearchetypes/product/Batch.java:21`
+
+## When to Use
+
+Batch tracking is appropriate when:
+- Individual instance identity is unimportant, but batch origin matters
+- Need to track manufacturing/quality control information
+- Common with foodstuffs, chemicals, and manufactured goods
+
+**Examples:** Food batches with expiry dates, manufactured parts from same production run
+
+## Constructor
+
+```java
+private Batch(BatchId id,
+              BatchName name,
+              ProductType productType,
+              Quantity quantityInBatch,
+              Instant dateProduced,
+              Instant sellBy,
+              Instant useBy,
+              Instant bestBefore,
+              SerialNumber startSerialNumber,
+              SerialNumber endSerialNumber,
+              String comments)
+```
+
+Use `Batch.builder()` to create instances.
+
+<ParamField path="id" type="BatchId" required>
+  Unique identifier for this batch
+</ParamField>
+
+<ParamField path="name" type="BatchName" required>
+  Human-readable batch name
+</ParamField>
+
+<ParamField path="productType" type="ProductType" required>
+  The ProductType this batch belongs to
+</ParamField>
+
+<ParamField path="quantityInBatch" type="Quantity" required>
+  Total quantity in this batch. Unit must match ProductType's preferred unit.
+</ParamField>
+
+<ParamField path="dateProduced" type="Instant">
+  When the batch was produced (optional)
+</ParamField>
+
+<ParamField path="sellBy" type="Instant">
+  Sell-by date (optional)
+</ParamField>
+
+<ParamField path="useBy" type="Instant">
+  Use-by date (optional)
+</ParamField>
+
+<ParamField path="bestBefore" type="Instant">
+  Best-before date (optional)
+</ParamField>
+
+<ParamField path="startSerialNumber" type="SerialNumber">
+  Starting serial number in range (optional)
+</ParamField>
+
+<ParamField path="endSerialNumber" type="SerialNumber">
+  Ending serial number in range (optional)
+</ParamField>
+
+<ParamField path="comments" type="String">
+  Additional comments about the batch (optional)
+</ParamField>
+
+## Builder Pattern
+
+### builder
+
+```java
+static Builder builder()
+```
+
+Creates a new builder for constructing Batch instances.
+
+<ResponseField name="return" type="Builder">
+  A new Builder instance
+</ResponseField>
+
+**Example:**
+```java
+Batch batch = Batch.builder()
+    .id(BatchId.random())
+    .name(BatchName.of("BATCH-2024-001"))
+    .batchOf(productType)
+    .quantityInBatch(Quantity.of(1000, Unit.kilograms()))
+    .dateProduced(Instant.now())
+    .bestBefore(Instant.now().plus(Duration.ofDays(90)))
+    .comments("High quality harvest from Farm A")
+    .build();
+```
+
+## Accessor Methods
+
+### id
+
+```java
+BatchId id()
+```
+
+Returns the batch identifier.
+
+<ResponseField name="return" type="BatchId">
+  The batch identifier
+</ResponseField>
+
+### name
+
+```java
+BatchName name()
+```
+
+Returns the batch name.
+
+<ResponseField name="return" type="BatchName">
+  The batch name
+</ResponseField>
+
+### batchOf
+
+```java
+ProductIdentifier batchOf()
+```
+
+Returns the ProductType identifier this batch belongs to.
+
+<ResponseField name="return" type="ProductIdentifier">
+  The product identifier
+</ResponseField>
+
+### quantityInBatch
+
+```java
+Quantity quantityInBatch()
+```
+
+Returns the total quantity in this batch.
+
+<ResponseField name="return" type="Quantity">
+  The batch quantity
+</ResponseField>
+
+### dateProduced
+
+```java
+Optional<Instant> dateProduced()
+```
+
+Returns the production date if set.
+
+<ResponseField name="return" type="Optional<Instant>">
+  The production date, or empty if not set
+</ResponseField>
+
+### sellBy
+
+```java
+Optional<Instant> sellBy()
+```
+
+Returns the sell-by date if set.
+
+<ResponseField name="return" type="Optional<Instant>">
+  The sell-by date, or empty if not set
+</ResponseField>
+
+### useBy
+
+```java
+Optional<Instant> useBy()
+```
+
+Returns the use-by date if set.
+
+<ResponseField name="return" type="Optional<Instant>">
+  The use-by date, or empty if not set
+</ResponseField>
+
+### bestBefore
+
+```java
+Optional<Instant> bestBefore()
+```
+
+Returns the best-before date if set.
+
+<ResponseField name="return" type="Optional<Instant>">
+  The best-before date, or empty if not set
+</ResponseField>
+
+### startSerialNumber
+
+```java
+Optional<SerialNumber> startSerialNumber()
+```
+
+Returns the starting serial number if set.
+
+<ResponseField name="return" type="Optional<SerialNumber>">
+  The start serial number, or empty if not set
+</ResponseField>
+
+### endSerialNumber
+
+```java
+Optional<SerialNumber> endSerialNumber()
+```
+
+Returns the ending serial number if set.
+
+<ResponseField name="return" type="Optional<SerialNumber>">
+  The end serial number, or empty if not set
+</ResponseField>
+
+### comments
+
+```java
+Optional<String> comments()
+```
+
+Returns any comments about the batch.
+
+<ResponseField name="return" type="Optional<String>">
+  The comments, or empty if not set
+</ResponseField>
+
+## Builder Methods
+
+The `Builder` class provides a fluent interface for constructing `Batch` instances.
+
+### id
+
+```java
+Builder id(BatchId id)
+```
+
+Sets the batch ID.
+
+<ParamField path="id" type="BatchId" required>
+  The batch identifier
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### name
+
+```java
+Builder name(BatchName name)
+```
+
+Sets the batch name.
+
+<ParamField path="name" type="BatchName" required>
+  The batch name
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### batchOf
+
+```java
+Builder batchOf(ProductType productType)
+```
+
+Sets the ProductType this batch belongs to.
+
+<ParamField path="productType" type="ProductType" required>
+  The product type
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### quantityInBatch
+
+```java
+Builder quantityInBatch(Quantity quantityInBatch)
+```
+
+Sets the quantity in this batch. The unit must match the ProductType's preferred unit.
+
+<ParamField path="quantityInBatch" type="Quantity" required>
+  The batch quantity
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### dateProduced
+
+```java
+Builder dateProduced(Instant dateProduced)
+```
+
+Sets the production date.
+
+<ParamField path="dateProduced" type="Instant">
+  The production date
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### sellBy
+
+```java
+Builder sellBy(Instant sellBy)
+```
+
+Sets the sell-by date.
+
+<ParamField path="sellBy" type="Instant">
+  The sell-by date
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### useBy
+
+```java
+Builder useBy(Instant useBy)
+```
+
+Sets the use-by date.
+
+<ParamField path="useBy" type="Instant">
+  The use-by date
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### bestBefore
+
+```java
+Builder bestBefore(Instant bestBefore)
+```
+
+Sets the best-before date.
+
+<ParamField path="bestBefore" type="Instant">
+  The best-before date
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### startSerialNumber
+
+```java
+Builder startSerialNumber(SerialNumber startSerialNumber)
+```
+
+Sets the starting serial number.
+
+<ParamField path="startSerialNumber" type="SerialNumber">
+  The start serial number
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### endSerialNumber
+
+```java
+Builder endSerialNumber(SerialNumber endSerialNumber)
+```
+
+Sets the ending serial number.
+
+<ParamField path="endSerialNumber" type="SerialNumber">
+  The end serial number
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### comments
+
+```java
+Builder comments(String comments)
+```
+
+Sets comments about the batch.
+
+<ParamField path="comments" type="String">
+  Additional comments
+</ParamField>
+
+<ResponseField name="return" type="Builder">
+  This builder for chaining
+</ResponseField>
+
+### build
+
+```java
+Batch build()
+```
+
+Builds the Batch instance.
+
+<ResponseField name="return" type="Batch">
+  The constructed Batch
+</ResponseField>
+
+**Throws:** `IllegalArgumentException` if:
+- Required fields are missing
+- Quantity unit doesn't match ProductType's preferred unit
+
+## Validation
+
+The Batch constructor validates that:
+- The quantity unit matches the ProductType's preferred unit
+- All required fields are provided
+
+This ensures batches can only contain quantities that make sense for the product type.
+
+**Example:**
+```java
+// Valid: quantity unit matches product's preferred unit
+ProductType flour = ProductType.builder()
+    .preferredUnit(Unit.kilograms())
+    .build();
+
+Batch batch = Batch.builder()
+    .batchOf(flour)
+    .quantityInBatch(Quantity.of(1000, Unit.kilograms())) // OK
+    .build();
+
+// Invalid: would throw IllegalArgumentException
+Batch invalid = Batch.builder()
+    .batchOf(flour)
+    .quantityInBatch(Quantity.of(1000, Unit.liters())) // ERROR
+    .build();
+```

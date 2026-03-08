@@ -1,0 +1,370 @@
+---
+title: Order Services
+description: Service facade providing external dependencies for order operations
+---
+
+## Overview
+
+`OrderServices` is a record that bundles all external service dependencies required by the `Order` aggregate. It provides a clean dependency injection point and ensures orders have access to pricing, inventory, payment, and fulfillment capabilities.
+
+## Record Definition
+
+```java
+package com.softwarearchetypes.ordering;
+
+record OrderServices(
+    PricingService pricing,
+    InventoryService inventory,
+    PaymentService payment,
+    FulfillmentService fulfillment
+) {}
+```
+
+## Components
+
+### pricing
+
+Service responsible for calculating order line prices.
+
+<ParamField path="pricing" type="PricingService" required>
+  Pricing service implementation
+  
+  **Methods:**
+  - `calculatePrice(PricingContext)` - Returns `OrderLinePricing` based on product, quantity, customer, and context
+</ParamField>
+
+**Usage in Order:**
+```java
+void priceLines() {
+    for (OrderLine line : lines) {
+        OrderParties effectiveParties = getEffectivePartiesFor(line);
+        PricingContext context = PricingContext.forOrderLine(line, effectiveParties);
+        OrderLinePricing pricing = services.pricing().calculatePrice(context);
+        line.applyPricing(pricing);
+    }
+}
+```
+
+### inventory
+
+Service managing product availability and allocation.
+
+<ParamField path="inventory" type="InventoryService" required>
+  Inventory service implementation
+  
+  **Methods:**
+  - `allocate(AllocationRequest)` - Reserves inventory for order lines
+  - Returns `AllocationResult` with status (ALLOCATED, INSUFFICIENT_QUANTITY, etc.)
+</ParamField>
+
+**Usage in Order:**
+```java
+void confirm() {
+    for (OrderLine line : lines) {
+        AllocationResult result = services.inventory().allocate(
+            AllocationRequest.builder()
+                .productId(line.productId())
+                .quantity(line.quantity())
+                .orderId(this.id)
+                .build()
+        );
+        if (result.status() != AllocationStatus.ALLOCATED) {
+            throw new IllegalStateException("Inventory allocation failed");
+        }
+    }
+    // ...
+}
+```
+
+### payment
+
+Service handling payment authorization and capture.
+
+<ParamField path="payment" type="PaymentService" required>
+  Payment service implementation
+  
+  **Methods:**
+  - `authorizeAndCapture(PaymentRequest)` - Processes payment for order total
+  - Returns `PaymentResult` with status (CAPTURED, DECLINED, ERROR, etc.)
+</ParamField>
+
+**Usage in Order:**
+```java
+void confirm() {
+    // ... inventory allocation ...
+    
+    PaymentResult paymentResult = services.payment().authorizeAndCapture(
+        PaymentRequest.builder()
+            .orderId(this.id)
+            .amount(totalPrice().orElse(Money.zero("PLN")))
+            .build()
+    );
+    if (paymentResult.status() != PaymentStatus.CAPTURED) {
+        throw new IllegalStateException("Payment failed: " + 
+            paymentResult.failureReason());
+    }
+    // ...
+}
+```
+
+### fulfillment
+
+Service orchestrating order fulfillment operations.
+
+<ParamField path="fulfillment" type="FulfillmentService" required>
+  Fulfillment service implementation
+  
+  **Methods:**
+  - `startFulfillment(OrderId)` - Initiates fulfillment process
+  - `cancelFulfillment(OrderId)` - Cancels ongoing fulfillment
+</ParamField>
+
+**Usage in Order:**
+```java
+void confirm() {
+    // ... inventory and payment ...
+    
+    this.status = OrderStatus.CONFIRMED;
+    services.fulfillment().startFulfillment(this.id);
+}
+
+void cancel() {
+    OrderStatus previousStatus = this.status;
+    this.status = OrderStatus.CANCELLED;
+    if (previousStatus != OrderStatus.DRAFT) {
+        services.fulfillment().cancelFulfillment(this.id);
+    }
+}
+```
+
+## Creating OrderServices
+
+Since `OrderServices` is a record, it's created using the canonical constructor:
+
+```java
+OrderServices services = new OrderServices(
+    pricingService,
+    inventoryService,
+    paymentService,
+    fulfillmentService
+);
+```
+
+## Usage Examples
+
+### Spring Configuration
+
+```java
+@Configuration
+public class OrderingConfiguration {
+    
+    @Bean
+    public OrderServices orderServices(
+            PricingService pricingService,
+            InventoryService inventoryService,
+            PaymentService paymentService,
+            FulfillmentService fulfillmentService) {
+        return new OrderServices(
+            pricingService,
+            inventoryService,
+            paymentService,
+            fulfillmentService
+        );
+    }
+    
+    @Bean
+    public OrderFactory orderFactory(
+            OrderServices services,
+            OrderRepository repository) {
+        return new OrderFactory(services, repository);
+    }
+}
+```
+
+### Creating Orders with Services
+
+```java
+public class OrderFactory {
+    private final OrderServices services;
+    
+    public Order createOrder(OrderId orderId, OrderParties parties) {
+        return Order.builder(orderId, parties, services)
+            .build();
+    }
+    
+    public Order createOrderWithLines(
+            OrderId orderId,
+            OrderParties parties,
+            List<OrderLineSpecification> lineSpecs) {
+        
+        var builder = Order.builder(orderId, parties, services);
+        
+        for (var spec : lineSpecs) {
+            builder.addLine(spec.productId(), spec.quantity());
+        }
+        
+        return builder.build();
+    }
+}
+```
+
+### Test Doubles
+
+```java
+public class OrderServicesTestFactory {
+    
+    public static OrderServices createStub() {
+        return new OrderServices(
+            new StubPricingService(),
+            new StubInventoryService(),
+            new StubPaymentService(),
+            new StubFulfillmentService()
+        );
+    }
+    
+    public static OrderServices createWithFailingPayment() {
+        return new OrderServices(
+            new StubPricingService(),
+            new StubInventoryService(),
+            new FailingPaymentService(),  // Payment always declines
+            new StubFulfillmentService()
+        );
+    }
+    
+    public static OrderServices createWithInsufficientInventory() {
+        return new OrderServices(
+            new StubPricingService(),
+            new InsufficientInventoryService(),  // Always out of stock
+            new StubPaymentService(),
+            new StubFulfillmentService()
+        );
+    }
+}
+```
+
+### Mocking for Tests
+
+```java
+@Test
+void shouldAllocateInventoryDuringConfirmation() {
+    // Arrange
+    var mockInventory = mock(InventoryService.class);
+    when(mockInventory.allocate(any()))
+        .thenReturn(AllocationResult.success());
+    
+    var services = new OrderServices(
+        stubPricing(),
+        mockInventory,
+        stubPayment(),
+        stubFulfillment()
+    );
+    
+    Order order = Order.builder(orderId, parties, services)
+        .addLine(productId, Quantity.of(5))
+        .build();
+    
+    order.priceLines();
+    
+    // Act
+    order.confirm();
+    
+    // Assert
+    verify(mockInventory).allocate(argThat(req ->
+        req.productId().equals(productId) &&
+        req.quantity().equals(Quantity.of(5)) &&
+        req.orderId().equals(orderId)
+    ));
+}
+```
+
+## Service Orchestration Flow
+
+The `Order` aggregate orchestrates services in a specific sequence during confirmation:
+
+```
+1. Order.confirm() called
+   ↓
+2. For each line: InventoryService.allocate()
+   ↓ (all allocations succeed)
+3. PaymentService.authorizeAndCapture()
+   ↓ (payment captured)
+4. Status → CONFIRMED
+   ↓
+5. FulfillmentService.startFulfillment()
+   ↓
+6. Fulfillment worker processes
+   ↓
+7. Order.updateFulfillmentStatus() (callback)
+   ↓
+8. Status → PROCESSING → FULFILLED
+```
+
+## Design Considerations
+
+### Service Boundaries
+
+Each service represents a distinct bounded context:
+- **Pricing**: Product catalog, pricing rules, discounts
+- **Inventory**: Stock levels, warehouses, reservations
+- **Payment**: Payment processing, billing, transactions
+- **Fulfillment**: Shipping, provisioning, delivery
+
+### Dependency Injection
+
+The record pattern provides:
+- **Immutability**: Services can't be swapped after order creation
+- **Type Safety**: Compiler enforces all services are provided
+- **Clarity**: Explicit dependencies visible in constructor
+
+### Failure Handling
+
+Services should return result objects rather than throwing exceptions for business failures:
+
+```java
+// Good: Result object with status
+AllocationResult result = inventory.allocate(request);
+if (result.status() == AllocationStatus.INSUFFICIENT_QUANTITY) {
+    // Handle insufficient inventory
+}
+
+// Avoid: Exceptions for business logic
+try {
+    inventory.allocate(request);
+} catch (InsufficientInventoryException e) {
+    // Exception handling for normal business case
+}
+```
+
+### Transactional Boundaries
+
+The order aggregate should typically be saved within a transaction that includes service calls:
+
+```java
+@Transactional
+public void confirmOrder(OrderId orderId) {
+    Order order = orderRepository.findById(orderId).orElseThrow();
+    
+    // All service calls and state changes in one transaction
+    order.confirm();
+    
+    orderRepository.save(order);
+    
+    // If any service fails, transaction rolls back
+}
+```
+
+## Related Types
+
+- **PricingService**: Calculates prices for order lines
+- **InventoryService**: Manages product availability and allocation
+- **PaymentService**: Processes payments and refunds
+- **FulfillmentService**: Orchestrates order fulfillment (see [Fulfillment Service](/api/ordering/fulfillment))
+- **Order**: Main aggregate using these services (see [Order](/api/ordering/order))
+
+## Service Interface References
+
+For detailed documentation on each service interface:
+- [FulfillmentService](/api/ordering/fulfillment) - Order fulfillment operations
+- PricingService - Located in `/workspace/source/ordering/src/main/java/com/softwarearchetypes/ordering/PricingService.java`
+- InventoryService - Located in `/workspace/source/ordering/src/main/java/com/softwarearchetypes/ordering/InventoryService.java`
+- PaymentService - Located in `/workspace/source/ordering/src/main/java/com/softwarearchetypes/ordering/PaymentService.java`
