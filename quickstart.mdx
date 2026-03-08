@@ -1,0 +1,546 @@
+---
+title: "Quickstart Guide"
+description: "Build your first e-commerce transaction with accounting in 5 minutes"
+---
+
+## Welcome to Archetypy Oprogramowania
+
+This quickstart will guide you through creating a simple e-commerce transaction system with proper accounting. You'll learn how to:
+
+- Set up accounts for revenue tracking
+- Process a sale transaction with VAT
+- Handle customer refunds correctly
+- Query account balances
+
+By the end, you'll have a working example that demonstrates double-entry accounting principles in action.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Java 21** or later installed
+- **Maven** 3.6+ for dependency management
+- A Java IDE (IntelliJ IDEA, Eclipse, or VS Code)
+
+<Note>
+  This quickstart uses the **accounting** and **quantity** modules. You can add more modules as needed for your application.
+</Note>
+
+## Installation
+
+Add Archetypy Oprogramowania to your Maven project:
+
+<Steps>
+  <Step title="Add the repository">
+    First, configure the GitHub Packages repository in your `pom.xml`:
+
+    ```xml pom.xml
+    <repositories>
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/Archetypy-Oprogramowania/archetypes</url>
+        </repository>
+    </repositories>
+    ```
+  </Step>
+
+  <Step title="Add dependencies">
+    Add the accounting module dependency:
+
+    ```xml pom.xml
+    <dependencies>
+        <!-- Accounting module with double-entry bookkeeping -->
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>accounting</artifactId>
+            <version>0.0.1</version>
+        </dependency>
+        
+        <!-- Quantity module for Money type -->
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>quantity</artifactId>
+            <version>0.0.1</version>
+        </dependency>
+    </dependencies>
+    ```
+  </Step>
+
+  <Step title="Verify installation">
+    Build your project to download dependencies:
+
+    ```bash
+    mvn clean install
+    ```
+  </Step>
+</Steps>
+
+## Your First Transaction
+
+Let's create a simple e-commerce scenario: processing a sale with VAT and then handling a refund.
+
+### Step 1: Set Up the Accounting System
+
+Create a new Java class and initialize the accounting facade:
+
+```java EcommerceExample.java
+package com.example;
+
+import com.softwarearchetypes.accounting.*;
+import com.softwarearchetypes.common.Result;
+import com.softwarearchetypes.quantity.money.Money;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+
+import static com.softwarearchetypes.quantity.money.Money.pln;
+import static java.time.Clock.fixed;
+
+public class EcommerceExample {
+    
+    public static void main(String[] args) {
+        // Initialize the accounting system with in-memory storage
+        Instant now = Instant.now();
+        Clock clock = fixed(now, ZoneId.systemDefault());
+        AccountingFacade accounting = AccountingConfiguration
+            .inMemory(clock)
+            .facade();
+        
+        System.out.println("✅ Accounting system initialized");
+    }
+}
+```
+
+<Tip>
+  `AccountingConfiguration.inMemory()` provides a simple in-memory implementation perfect for testing and learning. For production, you'd implement persistent repositories.
+</Tip>
+
+### Step 2: Create Your Chart of Accounts
+
+Every accounting system needs accounts. Let's create three accounts for our e-commerce store:
+
+```java EcommerceExample.java
+// Create accounts for the e-commerce business
+AccountId cashAccount = AccountId.generate();
+AccountId revenueAccount = AccountId.generate();
+AccountId vatPayableAccount = AccountId.generate();
+
+// Cash is an ASSET - money we have
+accounting.createAccount(
+    CreateAccount.generateAssetAccount(cashAccount, "Cash")
+);
+
+// Sales Revenue is a REVENUE account - income from sales
+accounting.createAccount(
+    new CreateAccount(revenueAccount, "Sales Revenue", "REVENUE")
+);
+
+// VAT Payable is a LIABILITY - tax we owe to the government
+accounting.createAccount(
+    new CreateAccount(vatPayableAccount, "VAT Payable", "LIABILITY")
+);
+
+System.out.println("✅ Chart of accounts created");
+```
+
+<Info>
+  **Account Types**: 
+  - `ASSET` - Resources owned (cash, inventory, receivables)
+  - `LIABILITY` - Obligations owed (payables, loans)
+  - `REVENUE` - Income from business activities
+  - `EXPENSE` - Costs of doing business
+  - `OFF_BALANCE` - Tracking accounts not on balance sheet
+</Info>
+
+### Step 3: Process a Sale Transaction
+
+Now let's record a sale of 123 PLN (100 PLN net + 23 PLN VAT):
+
+```java EcommerceExample.java
+// Record a sale: 123 PLN gross (100 PLN net + 23 PLN VAT)
+Instant saleTime = now;
+
+Transaction sale = accounting.transaction()
+    .occurredAt(saleTime)           // When it happened
+    .appliesAt(saleTime)            // When it takes effect
+    .withTypeOf("sale")             // Transaction type
+    .executing()                    // Start building entries
+    .creditTo(cashAccount, pln(123))           // +123 to Cash (debit in accounting)
+    .debitFrom(revenueAccount, pln(100))       // +100 to Revenue (credit in accounting)
+    .debitFrom(vatPayableAccount, pln(23))     // +23 to VAT Payable (credit)
+    .build();
+
+// Execute the transaction
+Result<String, TransactionId> result = accounting.execute(sale);
+
+if (result.success()) {
+    System.out.println("✅ Sale recorded successfully!");
+    System.out.println("   Cash balance: " + accounting.balance(cashAccount).orElse(pln(0)));
+    System.out.println("   Revenue: " + accounting.balance(revenueAccount).orElse(pln(0)));
+    System.out.println("   VAT Payable: " + accounting.balance(vatPayableAccount).orElse(pln(0)));
+} else {
+    System.out.println("❌ Transaction failed: " + result.getFailure());
+}
+```
+
+**Expected Output:**
+```
+✅ Sale recorded successfully!
+   Cash balance: 123.00 PLN
+   Revenue: -100.00 PLN
+   VAT Payable: -23.00 PLN
+```
+
+<Note>
+  **Why negative balances?** In double-entry accounting:
+  - Assets have positive balances (debits)
+  - Revenues and Liabilities have negative balances (credits)
+  
+  This ensures the fundamental equation: Assets = Liabilities + Equity (which includes Revenue)
+</Note>
+
+### Step 4: Process a Full Refund
+
+Customer changed their mind? Let's process a refund that reverses the sale:
+
+```java EcommerceExample.java
+// Process a full refund
+Instant refundTime = saleTime.plusSeconds(3600); // 1 hour later
+
+Transaction refund = accounting.transaction()
+    .occurredAt(refundTime)
+    .appliesAt(refundTime)
+    .withTypeOf("refund")
+    .executing()
+    .debitFrom(cashAccount, pln(123))          // -123 from Cash
+    .creditTo(revenueAccount, pln(100))        // -100 from Revenue
+    .creditTo(vatPayableAccount, pln(23))      // -23 from VAT Payable
+    .build();
+
+Result<String, TransactionId> refundResult = accounting.execute(refund);
+
+if (refundResult.success()) {
+    System.out.println("✅ Refund processed successfully!");
+    System.out.println("   Cash balance: " + accounting.balance(cashAccount).orElse(pln(0)));
+    System.out.println("   Revenue: " + accounting.balance(revenueAccount).orElse(pln(0)));
+    System.out.println("   VAT Payable: " + accounting.balance(vatPayableAccount).orElse(pln(0)));
+}
+```
+
+**Expected Output:**
+```
+✅ Refund processed successfully!
+   Cash balance: 0.00 PLN
+   Revenue: 0.00 PLN
+   VAT Payable: 0.00 PLN
+```
+
+Perfect! The refund completely reversed the original sale.
+
+## Complete Working Example
+
+Here's the complete code you can run:
+
+<CodeGroup>
+
+```java EcommerceExample.java
+package com.example;
+
+import com.softwarearchetypes.accounting.*;
+import com.softwarearchetypes.common.Result;
+import com.softwarearchetypes.quantity.money.Money;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+
+import static com.softwarearchetypes.quantity.money.Money.pln;
+import static java.time.Clock.fixed;
+
+public class EcommerceExample {
+    
+    public static void main(String[] args) {
+        // Step 1: Initialize accounting system
+        Instant now = Instant.now();
+        Clock clock = fixed(now, ZoneId.systemDefault());
+        AccountingFacade accounting = AccountingConfiguration
+            .inMemory(clock)
+            .facade();
+        
+        System.out.println("✅ Accounting system initialized\n");
+        
+        // Step 2: Create chart of accounts
+        AccountId cashAccount = AccountId.generate();
+        AccountId revenueAccount = AccountId.generate();
+        AccountId vatPayableAccount = AccountId.generate();
+        
+        accounting.createAccount(
+            CreateAccount.generateAssetAccount(cashAccount, "Cash")
+        );
+        accounting.createAccount(
+            new CreateAccount(revenueAccount, "Sales Revenue", "REVENUE")
+        );
+        accounting.createAccount(
+            new CreateAccount(vatPayableAccount, "VAT Payable", "LIABILITY")
+        );
+        
+        System.out.println("✅ Chart of accounts created\n");
+        
+        // Step 3: Process a sale
+        Instant saleTime = now;
+        Transaction sale = accounting.transaction()
+            .occurredAt(saleTime)
+            .appliesAt(saleTime)
+            .withTypeOf("sale")
+            .executing()
+            .creditTo(cashAccount, pln(123))
+            .debitFrom(revenueAccount, pln(100))
+            .debitFrom(vatPayableAccount, pln(23))
+            .build();
+        
+        Result<String, TransactionId> saleResult = accounting.execute(sale);
+        
+        if (saleResult.success()) {
+            System.out.println("✅ Sale recorded: 123 PLN (100 PLN + 23 PLN VAT)");
+            printBalances(accounting, cashAccount, revenueAccount, vatPayableAccount);
+        }
+        
+        // Step 4: Process a refund
+        Instant refundTime = saleTime.plusSeconds(3600);
+        Transaction refund = accounting.transaction()
+            .occurredAt(refundTime)
+            .appliesAt(refundTime)
+            .withTypeOf("refund")
+            .executing()
+            .debitFrom(cashAccount, pln(123))
+            .creditTo(revenueAccount, pln(100))
+            .creditTo(vatPayableAccount, pln(23))
+            .build();
+        
+        Result<String, TransactionId> refundResult = accounting.execute(refund);
+        
+        if (refundResult.success()) {
+            System.out.println("\n✅ Refund processed: 123 PLN");
+            printBalances(accounting, cashAccount, revenueAccount, vatPayableAccount);
+        }
+    }
+    
+    private static void printBalances(AccountingFacade accounting, 
+                                     AccountId cash, 
+                                     AccountId revenue, 
+                                     AccountId vat) {
+        System.out.println("   Cash: " + accounting.balance(cash).orElse(pln(0)));
+        System.out.println("   Revenue: " + accounting.balance(revenue).orElse(pln(0)));
+        System.out.println("   VAT Payable: " + accounting.balance(vat).orElse(pln(0)));
+    }
+}
+```
+
+```xml pom.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>archetypy-quickstart</artifactId>
+    <version>1.0.0</version>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/Archetypy-Oprogramowania/archetypes</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>accounting</artifactId>
+            <version>0.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwarearchetypes</groupId>
+            <artifactId>quantity</artifactId>
+            <version>0.0.1</version>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+</CodeGroup>
+
+Run the example:
+
+```bash
+mvn clean compile exec:java -Dexec.mainClass="com.example.EcommerceExample"
+```
+
+## Key Concepts Learned
+
+<AccordionGroup>
+  <Accordion title="Double-Entry Accounting" icon="scale-balanced">
+    Every transaction has at least two entries that balance each other:
+    - **Debit** entries (`debitFrom`) increase assets, decrease liabilities/revenue
+    - **Credit** entries (`creditTo`) decrease assets, increase liabilities/revenue
+    
+    The sum of all debits must equal the sum of all credits in a transaction.
+  </Accordion>
+
+  <Accordion title="Transaction Builder Pattern" icon="hammer">
+    Transactions are built using a fluent API:
+    ```java
+    accounting.transaction()
+        .occurredAt(instant)     // When it happened
+        .appliesAt(instant)      // When it takes effect (bi-temporal)
+        .withTypeOf("type")      // Transaction classification
+        .executing()             // Build entries
+        .creditTo(account, amount)
+        .debitFrom(account, amount)
+        .build()
+    ```
+  </Accordion>
+
+  <Accordion title="Result Monad for Error Handling" icon="shield-check">
+    Operations return `Result<Error, Success>` instead of throwing exceptions:
+    ```java
+    Result<String, TransactionId> result = accounting.execute(transaction);
+    
+    if (result.success()) {
+        TransactionId id = result.get();
+        // Process success
+    } else {
+        String error = result.getFailure();
+        // Handle error
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Money Type Safety" icon="coins">
+    Use `Money` instead of primitives for financial calculations:
+    ```java
+    import static com.softwarearchetypes.quantity.money.Money.*;
+    
+    Money price = pln(100);           // 100.00 PLN
+    Money vat = price.multiply(0.23); // 23.00 PLN
+    Money total = price.add(vat);     // 123.00 PLN
+    ```
+    
+    Benefits: No rounding errors, currency-aware, proper precision.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Now that you've built your first transaction system, explore more features:
+
+<CardGroup cols={2}>
+  <Card title="Accounting Module" icon="book" href="/modules/accounting">
+    Learn about account projections, transaction reversal, and bi-temporal accounting
+  </Card>
+  <Card title="Money & Quantity" icon="ruler" href="/modules/quantity">
+    Master type-safe financial calculations and unit conversions
+  </Card>
+  <Card title="Ordering Module" icon="cart-shopping" href="/modules/ordering">
+    Build a complete order processing system with inventory integration
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/ecommerce">
+    Explore real-world examples including banking, telco, and fleet management
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+<Tip>
+  **Partial Refunds**: To refund only part of an order, create a transaction with proportional amounts:
+  ```java
+  // Refund 50% of a 123 PLN sale
+  accounting.transaction()
+      .withTypeOf("partial_refund")
+      .executing()
+      .debitFrom(cashAccount, pln(61.50))
+      .creditTo(revenueAccount, pln(50))
+      .creditTo(vatPayableAccount, pln(11.50))
+      .build();
+  ```
+</Tip>
+
+<Tip>
+  **Money Transfers**: Use the convenience method for simple transfers:
+  ```java
+  accounting.transfer(
+      fromAccount, 
+      toAccount, 
+      pln(1000), 
+      occurredAt, 
+      appliesAt
+  );
+  ```
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Transaction doesn't balance" icon="triangle-exclamation">
+    **Error**: Transaction entries don't sum to zero
+    
+    **Solution**: Ensure debits equal credits:
+    ```java
+    // ✅ Correct - balanced
+    .creditTo(cash, pln(123))    // +123
+    .debitFrom(revenue, pln(123)) // -123
+    
+    // ❌ Wrong - unbalanced
+    .creditTo(cash, pln(123))
+    .debitFrom(revenue, pln(100)) // Only -100!
+    ```
+  </Accordion>
+
+  <Accordion title="Account not found" icon="magnifying-glass">
+    **Error**: `Account {id} does not exist`
+    
+    **Solution**: Create the account before using it in transactions:
+    ```java
+    AccountId id = AccountId.generate();
+    accounting.createAccount(
+        CreateAccount.generateAssetAccount(id, "My Account")
+    );
+    // Now you can use 'id' in transactions
+    ```
+  </Accordion>
+
+  <Accordion title="Maven can't find the artifact" icon="download">
+    **Error**: Could not resolve dependency
+    
+    **Solution**: Configure GitHub authentication in `~/.m2/settings.xml`:
+    ```xml
+    <servers>
+      <server>
+        <id>github</id>
+        <username>YOUR_GITHUB_USERNAME</username>
+        <password>YOUR_GITHUB_TOKEN</password>
+      </server>
+    </servers>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Need Help?
+
+<CardGroup cols={2}>
+  <Card title="View Source Code" icon="github" href="https://github.com/Archetypy-Oprogramowania/archetypes">
+    Browse the complete source code and test scenarios
+  </Card>
+  <Card title="Report Issues" icon="bug" href="https://github.com/Archetypy-Oprogramowania/archetypes/issues">
+    Found a bug or have a question? Open an issue
+  </Card>
+</CardGroup>
