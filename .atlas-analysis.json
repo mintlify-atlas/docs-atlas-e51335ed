@@ -1,0 +1,189 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Archetypy Oprogramowania",
+  "projectDescription": "A comprehensive Java library implementing software design archetypes and patterns for building business applications",
+  "theme": "linden",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/archetypes",
+              "concepts/design-patterns"
+            ]
+          },
+          {
+            "group": "Modules",
+            "pages": [
+              "modules/common",
+              "modules/quantity",
+              "modules/accounting",
+              "modules/pricing",
+              "modules/product",
+              "modules/party",
+              "modules/inventory",
+              "modules/ordering",
+              "modules/graphs",
+              "modules/rules",
+              "modules/planvsexecution"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Common",
+            "pages": [
+              "api/common/result",
+              "api/common/version",
+              "api/common/events"
+            ]
+          },
+          {
+            "group": "Quantity",
+            "pages": [
+              "api/quantity/quantity",
+              "api/quantity/money",
+              "api/quantity/unit"
+            ]
+          },
+          {
+            "group": "Accounting",
+            "pages": [
+              "api/accounting/facade",
+              "api/accounting/account",
+              "api/accounting/transaction",
+              "api/accounting/entry"
+            ]
+          },
+          {
+            "group": "Pricing",
+            "pages": [
+              "api/pricing/calculator",
+              "api/pricing/calculator-types",
+              "api/pricing/parameters",
+              "api/pricing/interpretation"
+            ]
+          },
+          {
+            "group": "Product",
+            "pages": [
+              "api/product/catalog-entry",
+              "api/product/batch",
+              "api/product/constraints"
+            ]
+          },
+          {
+            "group": "Party",
+            "pages": [
+              "api/party/addresses",
+              "api/party/capabilities",
+              "api/party/lifecycle"
+            ]
+          },
+          {
+            "group": "Inventory",
+            "pages": [
+              "api/inventory/instance",
+              "api/inventory/inventory-entry",
+              "api/inventory/criteria"
+            ]
+          },
+          {
+            "group": "Ordering",
+            "pages": [
+              "api/ordering/order",
+              "api/ordering/fulfillment",
+              "api/ordering/services"
+            ]
+          },
+          {
+            "group": "Graphs",
+            "pages": [
+              "api/graphs/cycles",
+              "api/graphs/influence",
+              "api/graphs/scheduling",
+              "api/graphs/user-journey"
+            ]
+          },
+          {
+            "group": "Rules",
+            "pages": [
+              "api/rules/discounting",
+              "api/rules/predicates"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Tutorials",
+            "pages": [
+              "examples/accounting-basics",
+              "examples/pricing-strategies",
+              "examples/order-processing",
+              "examples/inventory-management"
+            ]
+          },
+          {
+            "group": "Anti-Patterns",
+            "pages": [
+              "examples/plan-vs-execution",
+              "examples/bad-implementation",
+              "examples/resolution-mismatch"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Double-entry accounting system with transaction management",
+    "Sophisticated pricing calculators with multiple interpretation modes",
+    "Type-safe quantity and money handling",
+    "Result monad for error handling",
+    "Event-driven architecture with EventPublisher",
+    "Product catalog with constraints and batching",
+    "Party and organization management",
+    "Inventory tracking with instance-based model",
+    "Order processing with fulfillment services",
+    "Graph algorithms for scheduling and analysis",
+    "Business rules engine for discounting and predicates"
+  ],
+  "publicApiSurface": [
+    "AccountingFacade",
+    "Calculator (interface and implementations)",
+    "Result<F, S>",
+    "Quantity",
+    "Money",
+    "Account",
+    "Transaction",
+    "CatalogEntry",
+    "AddressesFacade",
+    "CapabilitiesFacade",
+    "Instance",
+    "InventoryEntry",
+    "Order",
+    "EventPublisher",
+    "Version"
+  ]
+}
